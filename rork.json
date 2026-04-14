@@ -1,0 +1,10 @@
+{
+  "$schema": "https://rork.com/schema/rork.json",
+  "apps": [
+    {
+      "name": "Buttoned Up",
+      "path": "expo",
+      "framework": "react-native"
+    }
+  ]
+}
