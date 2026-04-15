@@ -11,8 +11,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  Image,
-  Dimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -36,10 +34,6 @@ import { useData } from "@/providers/DataProvider";
 import { getTaskStatus, getWorstStatus, statusSortKey } from "@/utils/dates";
 import { TaskStatus, Equipment, EquipmentGroup } from "@/constants/types";
 import EmojiPicker from "@/components/EmojiPicker";
-
-const BANNER_URL = "https://r2-pub.rork.com/generated-images/88322f44-e73b-4934-805c-1369a32115a6.png";
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const BANNER_HEIGHT = SCREEN_WIDTH * 0.52;
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   overdue: "Overdue",
@@ -426,17 +420,9 @@ export default function MainHomeScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={styles.bannerContainer}>
-        <Image
-          source={{ uri: BANNER_URL }}
-          style={[styles.bannerImage, { height: BANNER_HEIGHT + insets.top }]}
-          resizeMode="cover"
-        />
-        <View style={[styles.bannerOverlay, { height: BANNER_HEIGHT + insets.top }]} />
-        <View style={[styles.bannerFade, { backgroundColor: colors.background }]} />
-      </View>
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
         <View>
+          <Text style={[styles.title, { color: colors.text }]}>Buttoned Up</Text>
           {equipment.length > 0 && (
             <Text style={[styles.meta, { color: colors.textSecondary }]}>
               {equipment.length} {equipment.length === 1 ? "item" : "items"} tracked
@@ -449,8 +435,8 @@ export default function MainHomeScreen() {
               style={[
                 styles.actionBtn,
                 {
-                  backgroundColor: isReordering ? colors.accent : "rgba(255,255,255,0.85)",
-                  borderColor: isReordering ? colors.accent : "rgba(255,255,255,0.5)",
+                  backgroundColor: isReordering ? colors.accent : colors.card,
+                  borderColor: isReordering ? colors.accent : colors.border,
                 },
               ]}
               onPress={toggleReorder}
@@ -633,39 +619,14 @@ export default function MainHomeScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  bannerContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 0,
-  },
-  bannerImage: {
-    width: "100%",
-  },
-  bannerOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(0,0,0,0.05)",
-  },
-  bannerFade: {
-    position: "absolute",
-    bottom: -1,
-    left: 0,
-    right: 0,
-    height: 60,
-    opacity: 0.95,
-  },
   topBar: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     alignItems: "flex-start",
     paddingHorizontal: 20,
     paddingBottom: 20,
-    zIndex: 1,
   },
+  title: { fontSize: 30, fontWeight: "800" as const, letterSpacing: -0.6 },
   meta: { fontSize: 14, marginTop: 2 },
   topActions: { flexDirection: "row", gap: 10, alignItems: "center" },
   actionBtn: {
