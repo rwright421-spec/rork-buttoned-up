@@ -14,7 +14,7 @@ const SC: Record<TaskStatus, string> = { overdue: "#EF4444", due_soon: "#F59E0B"
 export default function EquipmentView() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { equipment, tasks, deleteEquipment, reorderTasks } = useData();
+  const { equipment, tasks, logs, deleteEquipment, reorderTasks } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [isReordering, setIsReordering] = useState(false);
@@ -32,15 +32,21 @@ export default function EquipmentView() {
   const del = useCallback(() => {
     if (!eq) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    const taskCount = tasks.filter(t => t.equipmentId === eq.id).length;
+    const taskIds = new Set(tasks.filter(t => t.equipmentId === eq.id).map(t => t.id));
+    const logCount = logs.filter(l => taskIds.has(l.taskId)).length;
+    const message = taskCount === 0
+      ? "This equipment has no tasks. This cannot be undone."
+      : `This will permanently delete ${taskCount} ${taskCount === 1 ? 'task' : 'tasks'} and ${logCount} ${logCount === 1 ? 'history entry' : 'history entries'}. This cannot be undone.`;
     Alert.alert(
       `Delete ${eq.name}?`,
-      "This will permanently delete all its tasks and history.",
+      message,
       [
         { text: "Cancel", style: "cancel" },
         { text: "Delete", style: "destructive", onPress: () => { deleteEquipment(eq.id); router.back(); } },
       ]
     );
-  }, [eq, deleteEquipment, router]);
+  }, [eq, deleteEquipment, router, tasks, logs]);
 
   const toggleReorder = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
