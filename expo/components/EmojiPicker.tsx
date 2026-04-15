@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
+  Dimensions,
+  Pressable,
 } from "react-native";
 import { X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
@@ -98,6 +100,9 @@ interface EmojiPickerProps {
   currentEmoji?: string;
 }
 
+const SCREEN_HEIGHT = Dimensions.get("window").height;
+const PICKER_HEIGHT = Math.min(SCREEN_HEIGHT * 0.65, 520);
+
 export default function EmojiPicker({ visible, onClose, onSelect, currentEmoji }: EmojiPickerProps) {
   const { colors } = useTheme();
   const [activeCategory, setActiveCategory] = useState(0);
@@ -111,13 +116,15 @@ export default function EmojiPicker({ visible, onClose, onSelect, currentEmoji }
     [onSelect, onClose]
   );
 
+  if (!visible) return null;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.container, { backgroundColor: colors.card }]}>
+      <Pressable style={styles.overlay} onPress={onClose}>
+        <Pressable style={[styles.container, { backgroundColor: colors.card, height: PICKER_HEIGHT }]} onPress={(e) => e.stopPropagation()}>
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.text }]}>Pick an Emoji</Text>
-            <TouchableOpacity onPress={onClose} activeOpacity={0.6}>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.6} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <X size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -161,7 +168,8 @@ export default function EmojiPicker({ visible, onClose, onSelect, currentEmoji }
           <ScrollView
             style={styles.emojiScroll}
             contentContainerStyle={styles.emojiGrid}
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled={true}
           >
             <Text style={[styles.categoryTitle, { color: colors.textSecondary }]}>
               {EMOJI_CATEGORIES[activeCategory].label}
@@ -189,8 +197,8 @@ export default function EmojiPicker({ visible, onClose, onSelect, currentEmoji }
               })}
             </View>
           </ScrollView>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -204,8 +212,8 @@ const styles = StyleSheet.create({
   container: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: "70%",
     paddingBottom: 30,
+    overflow: "hidden" as const,
   },
   header: {
     flexDirection: "row",
