@@ -6,11 +6,20 @@ export type TaskStatus = 'not_started' | 'overdue' | 'due_soon' | 'current';
 
 export type ThemeKey = 'clean' | 'dark' | 'warm' | 'ocean';
 
+export interface EquipmentGroup {
+  id: string;
+  name: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
 export interface Equipment {
   id: string;
   name: string;
   type: EquipmentType;
   emoji: string;
+  groupId: string | null;
+  sortOrder: number;
   createdAt: string;
 }
 
@@ -22,6 +31,7 @@ export interface Task {
   intervalUnit: IntervalUnit;
   lastCompletedDate: string | null;
   notes: string;
+  sortOrder: number;
   createdAt: string;
 }
 
