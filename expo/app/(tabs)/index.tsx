@@ -32,6 +32,7 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
 import { getTaskStatus, getWorstStatus, statusSortKey } from "@/utils/dates";
 import { TaskStatus, Equipment, EquipmentGroup } from "@/constants/types";
+import EmojiPicker from "@/components/EmojiPicker";
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   overdue: "Overdue",
@@ -84,6 +85,8 @@ export default function MainHomeScreen() {
   const [groupName, setGroupName] = useState("");
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assigningEquipment, setAssigningEquipment] = useState<string | null>(null);
+  const [groupEmoji, setGroupEmoji] = useState("📁");
+  const [showGroupEmojiPicker, setShowGroupEmojiPicker] = useState(false);
 
   const enriched = useMemo(() => {
     return equipment.map((eq) => {
@@ -175,27 +178,30 @@ export default function MainHomeScreen() {
   const openCreateGroup = useCallback(() => {
     setEditingGroup(null);
     setGroupName("");
+    setGroupEmoji("📁");
     setShowGroupModal(true);
   }, []);
 
   const openEditGroup = useCallback((group: EquipmentGroup) => {
     setEditingGroup(group);
     setGroupName(group.name);
+    setGroupEmoji(group.emoji ?? "📁");
     setShowGroupModal(true);
   }, []);
 
   const saveGroup = useCallback(() => {
     if (!groupName.trim()) return;
     if (editingGroup) {
-      updateGroup(editingGroup.id, { name: groupName.trim() });
+      updateGroup(editingGroup.id, { name: groupName.trim(), emoji: groupEmoji });
     } else {
-      addGroup(groupName.trim());
+      addGroup(groupName.trim(), groupEmoji);
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setShowGroupModal(false);
     setGroupName("");
+    setGroupEmoji("📁");
     setEditingGroup(null);
-  }, [groupName, editingGroup, addGroup, updateGroup]);
+  }, [groupName, groupEmoji, editingGroup, addGroup, updateGroup]);
 
   const confirmDeleteGroup = useCallback(
     (group: EquipmentGroup) => {
@@ -349,6 +355,7 @@ export default function MainHomeScreen() {
             ) : (
               <ChevronDown size={20} color={colors.textSecondary} />
             )}
+            <Text style={styles.groupEmoji}>{group.emoji ?? "📁"}</Text>
             <View style={[styles.groupDot, { backgroundColor: groupStatusColor }]} />
             <Text style={[styles.groupName, { color: colors.text }]}>{group.name}</Text>
             <View style={[styles.groupCount, { backgroundColor: colors.border + "80" }]}>
@@ -489,17 +496,26 @@ export default function MainHomeScreen() {
                 <X size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={[
-                styles.modalInput,
-                { backgroundColor: colors.background, borderColor: colors.border, color: colors.text },
-              ]}
-              placeholder="Group name..."
-              placeholderTextColor={colors.textSecondary}
-              value={groupName}
-              onChangeText={setGroupName}
-              autoFocus
-            />
+            <View style={styles.groupEmojiRow}>
+              <TouchableOpacity
+                style={[styles.groupEmojiBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                onPress={() => setShowGroupEmojiPicker(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.groupEmojiBtnText}>{groupEmoji}</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  { backgroundColor: colors.background, borderColor: colors.border, color: colors.text, flex: 1 },
+                ]}
+                placeholder="Group name..."
+                placeholderTextColor={colors.textSecondary}
+                value={groupName}
+                onChangeText={setGroupName}
+                autoFocus
+              />
+            </View>
             <TouchableOpacity
               style={[
                 styles.modalSave,
@@ -516,6 +532,13 @@ export default function MainHomeScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      <EmojiPicker
+        visible={showGroupEmojiPicker}
+        onClose={() => setShowGroupEmojiPicker(false)}
+        onSelect={(e) => { setGroupEmoji(e); setShowGroupEmojiPicker(false); }}
+        currentEmoji={groupEmoji}
+      />
 
       <Modal
         visible={showAssignModal}
@@ -621,7 +644,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
   },
-  groupHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  groupHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
+  groupEmoji: { fontSize: 20 },
   groupDot: { width: 8, height: 8, borderRadius: 4 },
   groupName: { fontSize: 16, fontWeight: "700" as const, flex: 1 },
   groupCount: {
@@ -693,13 +717,27 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalTitle: { fontSize: 18, fontWeight: "700" as const },
+  groupEmojiRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 16,
+  },
+  groupEmojiBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupEmojiBtnText: { fontSize: 28 },
   modalInput: {
     height: 50,
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 16,
     fontSize: 16,
-    marginBottom: 16,
   },
   modalSave: {
     height: 48,

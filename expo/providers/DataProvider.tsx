@@ -54,7 +54,10 @@ export const [DataProvider, useData] = createContextHook(() => {
       }
       if (logStr) setLogs(JSON.parse(logStr));
       if (settStr) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settStr) });
-      if (groupStr) setGroups(JSON.parse(groupStr));
+      if (groupStr) {
+        const parsed = JSON.parse(groupStr) as EquipmentGroup[];
+        setGroups(parsed.map((g) => ({ ...g, emoji: g.emoji ?? '📁' })));
+      }
       setLoaded(true);
       console.log('[DataProvider] Loaded data from storage');
     });
@@ -257,10 +260,11 @@ export const [DataProvider, useData] = createContextHook(() => {
       .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
   }, [logs]);
 
-  const addGroup = useCallback((name: string): EquipmentGroup => {
+  const addGroup = useCallback((name: string, emoji?: string): EquipmentGroup => {
     const newGroup: EquipmentGroup = {
       id: generateId(),
       name,
+      emoji: emoji ?? '📁',
       sortOrder: groups.length,
       createdAt: new Date().toISOString(),
     };

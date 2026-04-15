@@ -9,6 +9,7 @@ export type ThemeKey = 'clean' | 'dark' | 'warm' | 'ocean';
 export interface EquipmentGroup {
   id: string;
   name: string;
+  emoji: string;
   sortOrder: number;
   createdAt: string;
 }
