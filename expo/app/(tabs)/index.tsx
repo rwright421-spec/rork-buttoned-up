@@ -89,6 +89,15 @@ export default function MainHomeScreen() {
   const [groupEmoji, setGroupEmoji] = useState("📁");
   const [showGroupEmojiPicker, setShowGroupEmojiPicker] = useState(false);
 
+  const handleGroupEmojiClose = useCallback(() => {
+    setShowGroupEmojiPicker(false);
+  }, []);
+
+  const handleGroupEmojiSelect = useCallback((emoji: string) => {
+    setGroupEmoji(emoji);
+    setShowGroupEmojiPicker(false);
+  }, []);
+
   const enriched = useMemo(() => {
     return equipment.map((eq) => {
       const et = tasks.filter((t) => t.equipmentId === eq.id);
@@ -184,25 +193,35 @@ export default function MainHomeScreen() {
   }, []);
 
   const openEditGroup = useCallback((group: EquipmentGroup) => {
+    setShowGroupEmojiPicker(false);
     setEditingGroup(group);
     setGroupName(group.name);
     setGroupEmoji(group.emoji ?? "📁");
     setShowGroupModal(true);
   }, []);
 
-  const saveGroup = useCallback(() => {
-    if (!groupName.trim()) return;
-    if (editingGroup) {
-      updateGroup(editingGroup.id, { name: groupName.trim(), emoji: groupEmoji });
-    } else {
-      addGroup(groupName.trim(), groupEmoji);
-    }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const closeGroupModal = useCallback(() => {
     setShowGroupModal(false);
+    setShowGroupEmojiPicker(false);
     setGroupName("");
     setGroupEmoji("📁");
     setEditingGroup(null);
-  }, [groupName, groupEmoji, editingGroup, addGroup, updateGroup]);
+  }, []);
+
+  const saveGroup = useCallback(() => {
+    if (!groupName.trim()) return;
+    const trimmedName = groupName.trim();
+    const emoji = groupEmoji;
+    const editing = editingGroup;
+    
+    if (editing) {
+      updateGroup(editing.id, { name: trimmedName, emoji });
+    } else {
+      addGroup(trimmedName, emoji);
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    closeGroupModal();
+  }, [groupName, groupEmoji, editingGroup, addGroup, updateGroup, closeGroupModal]);
 
   const confirmDeleteGroup = useCallback(
     (group: EquipmentGroup) => {
@@ -481,18 +500,19 @@ export default function MainHomeScreen() {
         visible={showGroupModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowGroupModal(false)}
+        onRequestClose={closeGroupModal}
       >
-        <Pressable
+        <TouchableOpacity
           style={styles.modalOverlay}
-          onPress={() => setShowGroupModal(false)}
+          activeOpacity={1}
+          onPress={closeGroupModal}
         >
-          <Pressable style={[styles.modalContent, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
+          <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 {editingGroup ? "Edit Group" : "New Group"}
               </Text>
-              <TouchableOpacity onPress={() => setShowGroupModal(false)}>
+              <TouchableOpacity onPress={closeGroupModal}>
                 <X size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -529,14 +549,14 @@ export default function MainHomeScreen() {
                 {editingGroup ? "Save" : "Create"}
               </Text>
             </TouchableOpacity>
-          </Pressable>
-        </Pressable>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       <EmojiPicker
         visible={showGroupEmojiPicker}
-        onClose={() => setShowGroupEmojiPicker(false)}
-        onSelect={(e) => { setGroupEmoji(e); setShowGroupEmojiPicker(false); }}
+        onClose={handleGroupEmojiClose}
+        onSelect={handleGroupEmojiSelect}
         currentEmoji={groupEmoji}
       />
 
