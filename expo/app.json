@@ -35,7 +35,15 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "ios": {
+            "mode": "default"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
