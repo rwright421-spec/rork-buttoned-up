@@ -8,13 +8,13 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
 import { EquipmentType, IntervalUnit } from "@/constants/types";
 import { templateTasks } from "@/constants/templates";
-interface BI { name: string; intervalValue: number; intervalUnit: IntervalUnit; selected: boolean; }
+interface BI { name: string; intervalValue: number; intervalUnit: IntervalUnit; selected: boolean; alreadyAdded: boolean; }
 export default function BulkTaskAdder() {
   const { equipmentId, type } = useLocalSearchParams<{ equipmentId: string; type: string }>(); const { colors } = useTheme();
-  const { addTasks, equipment } = useData(); const router = useRouter(); const insets = useSafeAreaInsets();
+  const { addTasks, equipment, tasks } = useData(); const router = useRouter(); const insets = useSafeAreaInsets();
   const eq = equipment.find(e => e.id === equipmentId); const et = (type as EquipmentType) || "custom";
-  const [items, setItems] = useState<BI[]>(() => templateTasks[et].map(t => ({ ...t, selected: true })));
-  const tog = useCallback((i: number) => { setItems(p => p.map((t, j) => j === i ? { ...t, selected: !t.selected } : t)); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }, []);
+  const [items, setItems] = useState<BI[]>(() => { const existingNames = new Set(tasks.filter(t => t.equipmentId === equipmentId).map(t => t.name.toLowerCase().trim())); return templateTasks[et].map(t => { const alreadyAdded = existingNames.has(t.name.toLowerCase().trim()); return { ...t, selected: alreadyAdded ? false : true, alreadyAdded }; }); });
+  const tog = useCallback((i: number) => { setItems(p => { if (p[i]?.alreadyAdded) return p; return p.map((t, j) => j === i ? { ...t, selected: !t.selected } : t); }); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }, []);
   const cnt = useMemo(() => items.filter(i => i.selected).length, [items]);
   const add = useCallback(() => { if (!equipmentId) return;
     addTasks(items.filter(i => i.selected).map(t => ({ equipmentId, name: t.name, intervalValue: t.intervalValue, intervalUnit: t.intervalUnit, lastCompletedDate: null, notes: "" })));
@@ -26,10 +26,10 @@ export default function BulkTaskAdder() {
       {eq && <Text style={[s.sub, { color: colors.textSecondary }]}>For {eq.name}</Text>}
       <ScrollView style={s.sc} contentContainerStyle={[s.si, { paddingBottom: insets.bottom + 100 }]} showsVerticalScrollIndicator={false}>
         {items.length === 0 ? <Text style={[s.em, { color: colors.textSecondary }]}>No templates. Add manually.</Text> : items.map((it, i) => (
-          <TouchableOpacity key={i} style={[s.r, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => tog(i)} activeOpacity={0.7}>
-            <View style={[s.cb, { backgroundColor: it.selected ? colors.accent : "transparent", borderColor: it.selected ? colors.accent : colors.border }]}>
-              {it.selected && <Check size={14} color="#FFF" strokeWidth={3} />}</View>
-            <View style={s.ri}><Text style={[s.rn, { color: colors.text }]}>{it.name}</Text><Text style={[s.rv, { color: colors.textSecondary }]}>Every {it.intervalValue} {it.intervalUnit}</Text></View>
+          <TouchableOpacity key={i} style={[s.r, { backgroundColor: colors.card, borderColor: colors.border, opacity: it.alreadyAdded ? 0.45 : 1 }]} onPress={() => tog(i)} activeOpacity={it.alreadyAdded ? 0.45 : 0.7} disabled={it.alreadyAdded}>
+            {it.alreadyAdded ? <View style={[s.cb, { backgroundColor: colors.border, borderColor: colors.border }]} /> : <View style={[s.cb, { backgroundColor: it.selected ? colors.accent : "transparent", borderColor: it.selected ? colors.accent : colors.border }]}>
+              {it.selected && <Check size={14} color="#FFF" strokeWidth={3} />}</View>}
+            <View style={s.ri}><Text style={[s.rn, { color: colors.text }]}>{it.name}</Text>{it.alreadyAdded && <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>Already added</Text>}<Text style={[s.rv, { color: colors.textSecondary }]}>Every {it.intervalValue} {it.intervalUnit}</Text></View>
           </TouchableOpacity>))}
       </ScrollView>
       <View style={[s.bb, { paddingBottom: insets.bottom + 12, backgroundColor: colors.background }]}>
