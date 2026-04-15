@@ -91,11 +91,13 @@ export default function MainHomeScreen() {
 
   const handleGroupEmojiClose = useCallback(() => {
     setShowGroupEmojiPicker(false);
+    setShowGroupModal(true);
   }, []);
 
   const handleGroupEmojiSelect = useCallback((emoji: string) => {
     setGroupEmoji(emoji);
     setShowGroupEmojiPicker(false);
+    setShowGroupModal(true);
   }, []);
 
   const enriched = useMemo(() => {
@@ -519,7 +521,10 @@ export default function MainHomeScreen() {
             <View style={styles.groupEmojiRow}>
               <TouchableOpacity
                 style={[styles.groupEmojiBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
-                onPress={() => setShowGroupEmojiPicker(true)}
+                onPress={() => {
+                  setShowGroupModal(false);
+                  setTimeout(() => setShowGroupEmojiPicker(true), 350);
+                }}
                 activeOpacity={0.7}
               >
                 <Text style={styles.groupEmojiBtnText}>{groupEmoji}</Text>
