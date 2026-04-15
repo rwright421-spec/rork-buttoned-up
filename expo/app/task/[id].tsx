@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, Animated as RNAnimated } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, Pencil, Trash2, CheckCircle, Undo2 } from "lucide-react-native";
+import { ArrowLeft, Pencil, Trash2, CheckCircle, Undo2, ClipboardList } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
@@ -81,7 +81,15 @@ export default function TaskView() {
           {task.notes ? <Text style={[st.nt, { color: colors.textSecondary }]}>{task.notes}</Text> : null}
         </View>
         <Text style={[st.sect, { color: colors.textSecondary }]}>HISTORY</Text>
-        {historyLogs.length === 0 ? <Text style={[st.eh, { color: colors.textSecondary }]}>No prior completions.</Text> : historyLogs.map((l) => (
+        {allLogs.length === 0 ? (
+          <View style={st.emptyState}>
+            <ClipboardList size={32} color={colors.border} />
+            <Text style={[st.emptyTitle, { color: colors.text }]}>No completions yet</Text>
+            <Text style={[st.emptySub, { color: colors.textSecondary }]}>Tap Mark Complete to start your history.</Text>
+          </View>
+        ) : allLogs.length === 1 ? (
+          <Text style={[st.ehOnce, { color: colors.textSecondary }]}>Your history will appear here after your next completion.</Text>
+        ) : historyLogs.map((l) => (
           <TouchableOpacity key={l.id} style={[st.lr, { backgroundColor: colors.card, borderColor: colors.border }]} onLongPress={() => delLog(l.id)} activeOpacity={0.8}>
             <View style={[st.ld, { backgroundColor: colors.current }]} /><View style={st.li}><Text style={[st.ldt, { color: colors.text }]}>{formatDate(l.completedAt)}</Text>
               {l.notes ? <Text style={[st.ln, { color: colors.textSecondary }]}>{l.notes}</Text> : null}</View>
@@ -123,6 +131,10 @@ const st = StyleSheet.create({
   due: { fontSize: 18, fontWeight: "600" as const }, last: { fontSize: 14 }, intv: { fontSize: 14 }, nt: { fontSize: 14, fontStyle: "italic" as const },
   sect: { fontSize: 12, fontWeight: "600" as const, letterSpacing: 0.8, marginBottom: 10, marginLeft: 2 },
   eh: { fontSize: 14, textAlign: "center", paddingVertical: 20 },
+  emptyState: { alignItems: "center", paddingVertical: 32, gap: 8 },
+  emptyTitle: { fontSize: 15, fontWeight: "600" as const },
+  emptySub: { fontSize: 13, textAlign: "center" as const },
+  ehOnce: { fontSize: 14, textAlign: "center" as const, paddingVertical: 20 },
   lr: { flexDirection: "row", alignItems: "center", padding: 14, borderRadius: 10, borderWidth: 1, marginBottom: 6, gap: 10 },
   ld: { width: 8, height: 8, borderRadius: 4 }, li: { flex: 1 }, ldt: { fontSize: 15, fontWeight: "500" as const }, ln: { fontSize: 13, marginTop: 2 },
   bb: { paddingHorizontal: 20, paddingTop: 12 },
