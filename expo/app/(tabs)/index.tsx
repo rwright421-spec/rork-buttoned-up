@@ -10,6 +10,7 @@ import {
   Animated,
   Modal,
   Platform,
+  Pressable,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -482,12 +483,11 @@ export default function MainHomeScreen() {
         animationType="fade"
         onRequestClose={() => setShowGroupModal(false)}
       >
-        <TouchableOpacity
+        <Pressable
           style={styles.modalOverlay}
-          activeOpacity={1}
           onPress={() => setShowGroupModal(false)}
         >
-          <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.card }]}>
+          <Pressable style={[styles.modalContent, { backgroundColor: colors.card }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>
                 {editingGroup ? "Edit Group" : "New Group"}
@@ -529,8 +529,8 @@ export default function MainHomeScreen() {
                 {editingGroup ? "Save" : "Create"}
               </Text>
             </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <EmojiPicker
