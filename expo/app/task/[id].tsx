@@ -51,7 +51,6 @@ export default function TaskView() {
   useEffect(() => { return () => { if (undoTimer.current) clearTimeout(undoTimer.current); }; }, []);
   const complete = useCallback(() => {
     if (!id) return;
-    const logId = Date.now().toString(36) + Math.random().toString(36).substring(2, 10);
     addCompletionLog(id, new Date().toISOString(), notes.trim());
     setModal(false); setNotes("");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
