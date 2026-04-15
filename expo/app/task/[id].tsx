@@ -24,17 +24,23 @@ export default function TaskView() {
   const [undoLogId, setUndoLogId] = useState<string | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoAnim = useRef(new RNAnimated.Value(0)).current;
+  const undoProgress = useRef(new RNAnimated.Value(1)).current;
+  const [bannerWidth, setBannerWidth] = useState<number>(0);
   const clearUndo = useCallback(() => {
     if (undoTimer.current) clearTimeout(undoTimer.current);
     undoTimer.current = null;
+    undoProgress.stopAnimation();
+    undoProgress.setValue(1);
     RNAnimated.timing(undoAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setUndoLogId(null));
-  }, [undoAnim]);
+  }, [undoAnim, undoProgress]);
   const showUndo = useCallback((logId: string) => {
     setUndoLogId(logId);
     RNAnimated.timing(undoAnim, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+    undoProgress.setValue(1);
+    RNAnimated.timing(undoProgress, { toValue: 0, duration: UNDO_TIMEOUT, useNativeDriver: false }).start();
     if (undoTimer.current) clearTimeout(undoTimer.current);
     undoTimer.current = setTimeout(() => { clearUndo(); }, UNDO_TIMEOUT);
-  }, [undoAnim, clearUndo]);
+  }, [undoAnim, undoProgress, clearUndo]);
   const handleUndo = useCallback(() => {
     if (!undoLogId) return;
     deleteCompletionLog(undoLogId);
@@ -84,11 +90,16 @@ export default function TaskView() {
       </ScrollView>
       <View style={[st.bb, { paddingBottom: insets.bottom + 12, backgroundColor: colors.background }]}>
         {undoLogId && (
-          <RNAnimated.View style={[st.undoBanner, { backgroundColor: colors.text, opacity: undoAnim, transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
-            <Text style={[st.undoText, { color: colors.background }]}>Marked complete</Text>
-            <TouchableOpacity style={st.undoBtn} onPress={handleUndo} activeOpacity={0.7}>
-              <Undo2 size={16} color={colors.accent} /><Text style={[st.undoBtnText, { color: colors.accent }]}>Undo</Text>
-            </TouchableOpacity>
+          <RNAnimated.View onLayout={(e) => setBannerWidth(e.nativeEvent.layout.width)} style={[st.undoBanner, { backgroundColor: colors.text, opacity: undoAnim, transform: [{ translateY: undoAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }]}>
+            <View style={st.undoRow}>
+              <Text style={[st.undoText, { color: colors.background }]}>Marked complete</Text>
+              <TouchableOpacity style={st.undoBtn} onPress={handleUndo} activeOpacity={0.7}>
+                <Undo2 size={16} color={colors.accent} /><Text style={[st.undoBtnText, { color: colors.accent }]}>Undo</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={st.progressTrack}>
+              <RNAnimated.View style={[st.progressBar, { backgroundColor: colors.accent, width: bannerWidth > 0 ? undoProgress.interpolate({ inputRange: [0, 1], outputRange: [0, bannerWidth] }) : 0 }]} />
+            </View>
           </RNAnimated.View>
         )}
         <TouchableOpacity testID="complete" style={[st.cb, { backgroundColor: status === "overdue" ? "#EF4444" : colors.accent }]} onPress={() => setModal(true)} activeOpacity={0.8}>
@@ -124,7 +135,10 @@ const st = StyleSheet.create({
   ma: { flexDirection: "row", gap: 10, marginTop: 16 },
   mb: { flex: 1, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   mbt: { fontSize: 15, fontWeight: "600" as const }, nf: { fontSize: 16, textAlign: "center", marginTop: 100 },
-  undoBanner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, marginBottom: 10 },
+  undoBanner: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, marginBottom: 10 },
+  undoRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  progressTrack: { height: 3, borderRadius: 2, marginTop: 8, backgroundColor: "rgba(255,255,255,0.2)" },
+  progressBar: { height: 3, borderRadius: 2 },
   undoText: { fontSize: 14, fontWeight: "600" as const },
   undoBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   undoBtnText: { fontSize: 14, fontWeight: "700" as const },
