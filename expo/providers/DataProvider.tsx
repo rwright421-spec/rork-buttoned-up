@@ -110,10 +110,9 @@ export const [DataProvider, useData] = createContextHook(() => {
   }, [persist]);
 
   const reorderEquipment = useCallback((reordered: Equipment[]) => {
-    const updated = reordered.map((e, i) => ({ ...e, sortOrder: i }));
-    setEquipment(updated);
-    persist(KEYS.equipment, updated);
-    console.log('[DataProvider] Reordered equipment');
+    setEquipment(reordered);
+    persist(KEYS.equipment, reordered);
+    console.log('[DataProvider] Reordered equipment, sortOrders:', reordered.map(e => `${e.name}:${e.sortOrder}`).join(', '));
   }, [persist]);
 
   const moveEquipmentToGroup = useCallback((equipmentId: string, groupId: string | null) => {
