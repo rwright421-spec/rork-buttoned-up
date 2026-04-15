@@ -153,35 +153,21 @@ export default function MainHomeScreen() {
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      const fullList = [...equipment].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-      const filteredIds = list.map((e) => e.id);
-      const reordered = [...list];
-      [reordered[index], reordered[newIndex]] = [reordered[newIndex], reordered[index]];
-      const reorderedIds = reordered.map((e) => e.id);
+      const swapped = [...list];
+      [swapped[index], swapped[newIndex]] = [swapped[newIndex], swapped[index]];
 
-      const result = fullList.map((eq) => {
-        const idx = filteredIds.indexOf(eq.id);
-        if (idx !== -1) {
-          const newPos = reorderedIds.indexOf(eq.id);
-          return { ...eq, sortOrder: newPos } as Equipment;
+      const newSortOrders = new Map<string, number>();
+      swapped.forEach((item, i) => newSortOrders.set(item.id, i));
+
+      const updated = equipment.map((eq) => {
+        const newOrder = newSortOrders.get(eq.id);
+        if (newOrder !== undefined) {
+          return { ...eq, sortOrder: newOrder };
         }
         return eq;
       });
 
-      const finalResult: Equipment[] = [];
-      let ungroupedIdx = 0;
-      const groupIndices = new Map<string, number>();
-      
-      for (const eq of result) {
-        if (eq.groupId === groupId && filteredIds.includes(eq.id)) {
-          const pos = reorderedIds.indexOf(eq.id);
-          finalResult.push({ ...eq, sortOrder: pos });
-        } else {
-          finalResult.push(eq);
-        }
-      }
-
-      reorderEquipment(finalResult);
+      reorderEquipment(updated);
     },
     [equipment, reorderEquipment]
   );
