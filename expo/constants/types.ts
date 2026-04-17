@@ -15,6 +15,14 @@ export interface Area {
   templateKey?: string;
 }
 
+export interface PhotoRef {
+  uri: string;
+  platformId?: string;
+  width?: number;
+  height?: number;
+  createdAt: string;
+}
+
 export interface Thing {
   id: string;
   name: string;
@@ -24,6 +32,7 @@ export interface Thing {
   sortOrder: number;
   createdAt: string;
   decomposeDismissed?: boolean;
+  referencePhotos: PhotoRef[];
 }
 
 export type ScheduleKind =
@@ -66,6 +75,8 @@ export interface CompletionLog {
   taskId: string;
   completedAt: string;
   notes: string;
+  photoRefs: PhotoRef[];
+  editedAt?: string;
 }
 
 export interface TemplateTask {

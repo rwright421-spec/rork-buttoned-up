@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
-import { Thing, Task, CompletionLog, AppSettings, Area, Schedule, IntervalUnit } from '@/constants/types';
+import { Thing, Task, CompletionLog, AppSettings, Area, Schedule, IntervalUnit, PhotoRef } from '@/constants/types';
 import { computeAllUpcomingDue, computeNextDue } from '@/utils/dates';
 
 const KEYS = {
@@ -32,6 +32,7 @@ interface LegacyEquipment {
   sortOrder?: number;
   createdAt: string;
   decomposeDismissed?: boolean;
+  referencePhotos?: PhotoRef[];
 }
 
 interface LegacyTask {
@@ -100,6 +101,7 @@ export const [DataProvider, useData] = createContextHook(() => {
           sortOrder: e.sortOrder ?? i,
           createdAt: e.createdAt,
           decomposeDismissed: e.decomposeDismissed,
+          referencePhotos: e.referencePhotos ?? [],
         }));
         setThings(mapped);
       }
@@ -143,7 +145,10 @@ export const [DataProvider, useData] = createContextHook(() => {
           } as Task;
         }));
       }
-      if (logStr) setLogs(JSON.parse(logStr));
+      if (logStr) {
+        const parsedLogs = JSON.parse(logStr) as CompletionLog[];
+        setLogs(parsedLogs.map((l) => ({ ...l, photoRefs: l.photoRefs ?? [] })));
+      }
       if (settStr) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settStr) });
       setLoaded(true);
       console.log('[DataProvider] Loaded data from storage');
@@ -154,9 +159,10 @@ export const [DataProvider, useData] = createContextHook(() => {
     AsyncStorage.setItem(key, JSON.stringify(data));
   }, []);
 
-  const addThing = useCallback((eq: Omit<Thing, 'id' | 'createdAt' | 'sortOrder'>): Thing => {
+  const addThing = useCallback((eq: Omit<Thing, 'id' | 'createdAt' | 'sortOrder' | 'referencePhotos'> & { referencePhotos?: PhotoRef[] }): Thing => {
     const newThing: Thing = {
       ...eq,
+      referencePhotos: eq.referencePhotos ?? [],
       id: generateId(),
       sortOrder: things.length,
       createdAt: new Date().toISOString(),
@@ -289,8 +295,8 @@ export const [DataProvider, useData] = createContextHook(() => {
     console.log('[DataProvider] Moved task', taskId, 'to thing', destinationThingId);
   }, [persist]);
 
-  const addCompletionLog = useCallback((taskId: string, completedAt: string, notes: string) => {
-    const newLog: CompletionLog = { id: generateId(), taskId, completedAt, notes };
+  const addCompletionLog = useCallback((taskId: string, completedAt: string, notes: string, photoRefs?: PhotoRef[]): CompletionLog => {
+    const newLog: CompletionLog = { id: generateId(), taskId, completedAt, notes, photoRefs: photoRefs ?? [] };
 
     setLogs((prev) => {
       const task = tasks.find((t) => t.id === taskId);
@@ -307,6 +313,7 @@ export const [DataProvider, useData] = createContextHook(() => {
             taskId,
             completedAt: task.lastCompletedDate,
             notes: '',
+            photoRefs: [],
           });
         }
       }
@@ -328,7 +335,35 @@ export const [DataProvider, useData] = createContextHook(() => {
       persist(KEYS.tasks, updated);
       return updated;
     });
+    return newLog;
   }, [persist, tasks]);
+
+  const updateCompletionLog = useCallback((logId: string, updates: Partial<Pick<CompletionLog, 'completedAt' | 'notes' | 'photoRefs'>>) => {
+    setLogs((prev) => {
+      const target = prev.find((l) => l.id === logId);
+      if (!target) return prev;
+      const merged: CompletionLog = { ...target, ...updates, editedAt: new Date().toISOString() };
+      const updated = prev.map((l) => (l.id === logId ? merged : l));
+      persist(KEYS.logs, updated);
+      if (updates.completedAt && updates.completedAt !== target.completedAt) {
+        setTasks((prevTasks) => {
+          const taskLogs = updated
+            .filter((l) => l.taskId === target.taskId)
+            .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
+          const newLastCompleted = taskLogs.length > 0 ? taskLogs[0].completedAt : null;
+          const updatedTasks = prevTasks.map((t) => {
+            if (t.id !== target.taskId) return t;
+            const nextUpcoming = computeAllUpcomingDue(t.schedule, newLastCompleted, 1).map(d => d.toISOString());
+            const remaining = (t.dueDates ?? []).slice(1);
+            return { ...t, lastCompletedDate: newLastCompleted, dueDates: [...nextUpcoming, ...remaining] };
+          });
+          persist(KEYS.tasks, updatedTasks);
+          return updatedTasks;
+        });
+      }
+      return updated;
+    });
+  }, [persist]);
 
   const deleteCompletionLog = useCallback((logId: string) => {
     setLogs((prev) => {
@@ -466,6 +501,7 @@ export const [DataProvider, useData] = createContextHook(() => {
     reorderTasks,
     moveTaskToThing,
     addCompletionLog,
+    updateCompletionLog,
     deleteCompletionLog,
     getTasksForThing,
     getLogsForTask,

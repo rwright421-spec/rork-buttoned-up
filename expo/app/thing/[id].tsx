@@ -1,14 +1,16 @@
 import React, { useMemo, useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Image, Platform, ActionSheetIOS } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, Pencil, Trash2, Plus, GripVertical, ArrowUp, ArrowDown, Check, Sparkles, X } from "lucide-react-native";
+import { ArrowLeft, Pencil, Trash2, Plus, GripVertical, ArrowUp, ArrowDown, Check, Sparkles, X, Camera, ImageIcon } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
 import { getTaskStatus, getDueText, formatDate } from "@/utils/dates";
-import { TaskStatus, Task, Thing } from "@/constants/types";
+import { TaskStatus, Task, Thing, PhotoRef } from "@/constants/types";
 import { matchDecomposeTemplate } from "@/constants/templates";
+import { pickFromLibrary, takePhoto } from "@/utils/photos";
+import PhotoThumb from "@/components/PhotoThumb";
 
 const SC: Record<TaskStatus, string> = { overdue: "#EF4444", due_soon: "#F59E0B", current: "#22C55E", not_started: "#9CA3AF" };
 
@@ -75,6 +77,49 @@ export default function ThingView() {
   const dismissDecompose = useCallback(() => {
     if (!thing) return;
     updateThing(thing.id, { decomposeDismissed: true });
+  }, [thing, updateThing]);
+
+  const refPhotos = useMemo<PhotoRef[]>(() => thing?.referencePhotos ?? [], [thing]);
+  const [photoViewer, setPhotoViewer] = useState<PhotoRef | null>(null);
+
+  const addRefPhoto = useCallback(async () => {
+    if (!thing) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const doCamera = async () => {
+      const p = await takePhoto();
+      if (p) updateThing(thing.id, { referencePhotos: [...(thing.referencePhotos ?? []), p] });
+    };
+    const doLibrary = async () => {
+      const arr = await pickFromLibrary();
+      if (arr && arr.length > 0) updateThing(thing.id, { referencePhotos: [...(thing.referencePhotos ?? []), ...arr] });
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Cancel", "Take Photo", "Choose from Library"], cancelButtonIndex: 0 },
+        (i) => { if (i === 1) doCamera(); if (i === 2) doLibrary(); }
+      );
+    } else if (Platform.OS === "web") {
+      doLibrary();
+    } else {
+      Alert.alert("Add Reference Photo", undefined, [
+        { text: "Take Photo", onPress: doCamera },
+        { text: "Choose from Library", onPress: doLibrary },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  }, [thing, updateThing]);
+
+  const removeRefPhoto = useCallback((uri: string) => {
+    if (!thing) return;
+    updateThing(thing.id, { referencePhotos: (thing.referencePhotos ?? []).filter(p => p.uri !== uri) });
+  }, [thing, updateThing]);
+
+  const replaceRefPhoto = useCallback(async (uri: string) => {
+    if (!thing) return;
+    const picked = await pickFromLibrary();
+    if (!picked || picked.length === 0) return;
+    const next = (thing.referencePhotos ?? []).map(p => p.uri === uri ? picked[0] : p);
+    updateThing(thing.id, { referencePhotos: next });
   }, [thing, updateThing]);
 
   const doDecompose = useCallback(() => {
@@ -186,6 +231,43 @@ export default function ThingView() {
               </View>
             </View>
           )}
+          <View style={[st.refSection, { borderColor: colors.border }]}>
+            <View style={st.refHeader}>
+              <Text style={[st.refTitle, { color: colors.text }]}>Reference Photos</Text>
+              <TouchableOpacity style={[st.refAddBtn, { backgroundColor: colors.accent }]} onPress={addRefPhoto} activeOpacity={0.8} testID="add-ref-photo">
+                <Plus size={14} color="#FFF" strokeWidth={2.5} />
+                <Text style={st.refAddBtnT}>Add</Text>
+              </TouchableOpacity>
+            </View>
+            {refPhotos.length === 0 ? (
+              <TouchableOpacity
+                style={[st.refEmpty, { borderColor: colors.border }]}
+                onPress={addRefPhoto}
+                activeOpacity={0.7}
+              >
+                <View style={st.refEmptyIcons}>
+                  <Camera size={16} color={colors.textSecondary} />
+                  <ImageIcon size={16} color={colors.textSecondary} />
+                </View>
+                <Text style={[st.refEmptyT, { color: colors.textSecondary }]}>
+                  Attach manuals, serial numbers, or warranty cards for quick reference.
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={st.refGrid}>
+                {refPhotos.map(p => (
+                  <PhotoThumb
+                    key={p.uri}
+                    photo={p}
+                    size={84}
+                    onPress={() => setPhotoViewer(p)}
+                    onRemove={() => removeRefPhoto(p.uri)}
+                    onReplace={() => replaceRefPhoto(p.uri)}
+                  />
+                ))}
+              </View>
+            )}
+          </View>
           {eqTasks.map((t, index) => (
             <View key={t.id} style={st.taskRow}>
               {isReordering && (
@@ -236,6 +318,17 @@ export default function ThingView() {
           ))}
         </ScrollView>
       )}
+
+      <Modal visible={!!photoViewer} transparent animationType="fade" onRequestClose={() => setPhotoViewer(null)}>
+        <View style={st.viewerOverlay}>
+          <TouchableOpacity style={st.viewerClose} onPress={() => setPhotoViewer(null)} hitSlop={8}>
+            <X size={28} color="#FFF" />
+          </TouchableOpacity>
+          {photoViewer && (
+            <Image source={{ uri: photoViewer.uri }} style={st.viewerImg} resizeMode="contain" />
+          )}
+        </View>
+      </Modal>
 
       <View style={[st.bb, { paddingBottom: insets.bottom + 12, backgroundColor: colors.background }]}>
         <TouchableOpacity
@@ -296,4 +389,16 @@ const st = StyleSheet.create({
   ab: { flexDirection: "row", alignItems: "center", justifyContent: "center", height: 50, borderRadius: 14, gap: 8 },
   at: { color: "#FFF", fontSize: 16, fontWeight: "600" as const },
   nf: { fontSize: 16, textAlign: "center", marginTop: 100 },
+  refSection: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 12, gap: 10 },
+  refHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  refTitle: { fontSize: 15, fontWeight: "700" as const, letterSpacing: -0.2 },
+  refAddBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  refAddBtnT: { color: "#FFF", fontSize: 12, fontWeight: "700" as const },
+  refEmpty: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderStyle: "dashed" as const },
+  refEmptyIcons: { flexDirection: "row", gap: 4 },
+  refEmptyT: { flex: 1, fontSize: 12, lineHeight: 17 },
+  refGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  viewerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)", alignItems: "center", justifyContent: "center" },
+  viewerClose: { position: "absolute" as const, top: 60, right: 24, zIndex: 2, width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center" },
+  viewerImg: { width: "100%" as const, height: "100%" as const },
 });
