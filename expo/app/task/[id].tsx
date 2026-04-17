@@ -2,12 +2,13 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, TextInput, Animated as RNAnimated } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, Pencil, Trash2, CheckCircle, Undo2, ClipboardList, MoveRight, X } from "lucide-react-native";
+import { ArrowLeft, Pencil, Trash2, CheckCircle, Undo2, ClipboardList, MoveRight, X, Calendar } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
-import { getTaskStatus, getDueText, formatDate, formatInterval } from "@/utils/dates";
+import { getTaskStatus, getDueText, formatDate, describeSchedule } from "@/utils/dates";
 import { TaskStatus } from "@/constants/types";
+import CalendarPicker from "@/components/CalendarPicker";
 
 const SI: Record<TaskStatus, { label: string; color: string }> = {
   overdue: { label: "Overdue", color: "#EF4444" }, due_soon: { label: "Due Soon", color: "#F59E0B" },
@@ -18,7 +19,7 @@ const UNDO_TIMEOUT = 6000;
 export default function TaskView() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { tasks, things, areas, deleteTask, addCompletionLog, getLogsForTask, deleteCompletionLog, moveTaskToThing } = useData();
+  const { tasks, things, areas, deleteTask, addCompletionLog, getLogsForTask, deleteCompletionLog, moveTaskToThing, updateTask } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const task = tasks.find(t => t.id === id);
@@ -30,6 +31,7 @@ export default function TaskView() {
   const [notes, setNotes] = useState("");
   const [undoLogId, setUndoLogId] = useState<string | null>(null);
   const [showMove, setShowMove] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoAnim = useRef(new RNAnimated.Value(0)).current;
   const undoProgress = useRef(new RNAnimated.Value(1)).current;
@@ -121,7 +123,14 @@ export default function TaskView() {
           <View style={[st.badge, { backgroundColor: si.color }]}><Text style={st.badgeT}>{si.label}</Text></View>
           <Text style={[st.due, { color: si.color }]}>{dt}</Text>
           {task.lastCompletedDate && <Text style={[st.last, { color: colors.textSecondary }]}>Last completed: {formatDate(task.lastCompletedDate)}</Text>}
-          <Text style={[st.intv, { color: colors.textSecondary }]}>{formatInterval(task.intervalValue, task.intervalUnit)}</Text>
+          <Text style={[st.intv, { color: colors.textSecondary }]}>{describeSchedule(task.schedule)}</Text>
+          {task.dueDates && task.dueDates.length > 1 && (
+            <Text style={[st.intv, { color: colors.textSecondary }]}>Next {task.dueDates.length} dates: {task.dueDates.slice(0, 3).map(d => formatDate(d)).join(' · ')}</Text>
+          )}
+          <TouchableOpacity style={[st.overrideBtn, { borderColor: colors.border }]} onPress={() => setShowOverride(true)} activeOpacity={0.7}>
+            <Calendar size={14} color={colors.textSecondary} />
+            <Text style={[st.overrideText, { color: colors.textSecondary }]}>Override next due date</Text>
+          </TouchableOpacity>
           {task.notes ? <Text style={[st.nt, { color: colors.textSecondary }]}>{task.notes}</Text> : null}
         </View>
         <Text style={[st.sect, { color: colors.textSecondary }]}>HISTORY</Text>
@@ -175,6 +184,18 @@ export default function TaskView() {
           </View>
         </View>
       </Modal>
+      <CalendarPicker
+        visible={showOverride}
+        initialDate={task.dueDates && task.dueDates[0] ? new Date(task.dueDates[0]) : null}
+        title="Override next due"
+        onClose={() => setShowOverride(false)}
+        onSelect={(d) => {
+          const rest = (task.dueDates ?? []).slice(1);
+          updateTask(task.id, { dueDates: [d.toISOString(), ...rest] });
+          setShowOverride(false);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+      />
       <Modal visible={showMove} transparent animationType="slide" onRequestClose={() => setShowMove(false)}>
         <View style={st.moveOverlay}>
           <View style={[st.moveSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20 }]}>
@@ -228,6 +249,8 @@ const st = StyleSheet.create({
   due: { fontSize: 18, fontWeight: "600" as const },
   last: { fontSize: 14 },
   intv: { fontSize: 14 },
+  overrideBtn: { flexDirection: "row" as const, alignItems: "center" as const, gap: 6, alignSelf: "flex-start" as const, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 8, borderWidth: 1, borderStyle: "dashed" as const, marginTop: 4 },
+  overrideText: { fontSize: 12, fontWeight: "500" as const },
   nt: { fontSize: 14, fontStyle: "italic" as const },
   sect: { fontSize: 12, fontWeight: "600" as const, letterSpacing: 0.8, marginBottom: 10, marginLeft: 2 },
   emptyState: { alignItems: "center", paddingVertical: 32, gap: 8 },

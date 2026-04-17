@@ -73,8 +73,11 @@ export default function AreaCreationFlow({ onDone, onCancel, showBack }: Props) 
           th.tasks.map((t) => ({
             thingId: thing.id,
             name: t.name,
-            intervalValue: t.intervalValue,
-            intervalUnit: t.intervalUnit,
+            schedule: {
+              kind: 'interval_from_completion' as const,
+              intervalValue: t.intervalValue,
+              intervalUnit: t.intervalUnit,
+            },
             lastCompletedDate: null,
             notes: "",
           }))
@@ -100,8 +103,11 @@ export default function AreaCreationFlow({ onDone, onCancel, showBack }: Props) 
         dt.tasks.map((t) => ({
           thingId: thing.id,
           name: t.name,
-          intervalValue: t.intervalValue,
-          intervalUnit: t.intervalUnit,
+          schedule: {
+            kind: 'interval_from_completion' as const,
+            intervalValue: t.intervalValue,
+            intervalUnit: t.intervalUnit,
+          },
           lastCompletedDate: null,
           notes: "",
         }))

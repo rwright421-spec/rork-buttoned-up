@@ -97,8 +97,11 @@ export default function NewThingForm() {
           th.tasks.map((k) => ({
             thingId: t.id,
             name: k.name,
-            intervalValue: k.intervalValue,
-            intervalUnit: k.intervalUnit,
+            schedule: {
+              kind: 'interval_from_completion' as const,
+              intervalValue: k.intervalValue,
+              intervalUnit: k.intervalUnit,
+            },
             lastCompletedDate: null,
             notes: "",
           }))
@@ -123,8 +126,11 @@ export default function NewThingForm() {
         dt.tasks.map((k) => ({
           thingId: t.id,
           name: k.name,
-          intervalValue: k.intervalValue,
-          intervalUnit: k.intervalUnit,
+          schedule: {
+            kind: 'interval_from_completion' as const,
+            intervalValue: k.intervalValue,
+            intervalUnit: k.intervalUnit,
+          },
           lastCompletedDate: null,
           notes: "",
         }))

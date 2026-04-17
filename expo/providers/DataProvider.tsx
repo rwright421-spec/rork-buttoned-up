@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
-import { Thing, Task, CompletionLog, AppSettings, Area } from '@/constants/types';
+import { Thing, Task, CompletionLog, AppSettings, Area, Schedule, IntervalUnit } from '@/constants/types';
+import { computeAllUpcomingDue, computeNextDue } from '@/utils/dates';
 
 const KEYS = {
   equipment: 'buttonedup_equipment',
@@ -38,12 +39,14 @@ interface LegacyTask {
   equipmentId?: string;
   thingId?: string;
   name: string;
-  intervalValue: number;
-  intervalUnit: Task['intervalUnit'];
-  lastCompletedDate: string | null;
+  intervalValue?: number;
+  intervalUnit?: IntervalUnit;
+  lastCompletedDate?: string | null;
   notes: string;
   sortOrder?: number;
   createdAt: string;
+  schedule?: Schedule;
+  dueDates?: string[];
 }
 
 export const [DataProvider, useData] = createContextHook(() => {
@@ -105,17 +108,40 @@ export const [DataProvider, useData] = createContextHook(() => {
 
       if (taskStr) {
         const parsed = JSON.parse(taskStr) as LegacyTask[];
-        setTasks(parsed.map((t, i) => ({
-          id: t.id,
-          thingId: t.thingId ?? t.equipmentId ?? '',
-          name: t.name,
-          intervalValue: t.intervalValue,
-          intervalUnit: t.intervalUnit,
-          lastCompletedDate: t.lastCompletedDate,
-          notes: t.notes,
-          sortOrder: t.sortOrder ?? i,
-          createdAt: t.createdAt,
-        })));
+        setTasks(parsed.map((t, i) => {
+          const thingId = t.thingId ?? t.equipmentId ?? '';
+          const lastCompletedDate = t.lastCompletedDate ?? null;
+          let schedule: Schedule;
+          let dueDates: string[];
+          if (t.schedule) {
+            schedule = t.schedule;
+            if (t.dueDates && t.dueDates.length > 0) {
+              dueDates = t.dueDates;
+            } else {
+              const upcoming = computeAllUpcomingDue(schedule, lastCompletedDate, 1);
+              dueDates = upcoming.map((d) => d.toISOString());
+            }
+          } else {
+            schedule = {
+              kind: 'interval_from_completion',
+              intervalValue: t.intervalValue ?? 3,
+              intervalUnit: t.intervalUnit ?? 'months',
+            };
+            const next = computeNextDue(schedule, lastCompletedDate);
+            dueDates = next ? [next.toISOString()] : [];
+          }
+          return {
+            id: t.id,
+            thingId,
+            name: t.name,
+            schedule,
+            dueDates,
+            notes: t.notes,
+            sortOrder: t.sortOrder ?? i,
+            createdAt: t.createdAt,
+            lastCompletedDate,
+          } as Task;
+        }));
       }
       if (logStr) setLogs(JSON.parse(logStr));
       if (settStr) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settStr) });
@@ -185,9 +211,12 @@ export const [DataProvider, useData] = createContextHook(() => {
     });
   }, [persist]);
 
-  const addTask = useCallback((task: Omit<Task, 'id' | 'createdAt' | 'sortOrder'>): Task => {
+  const addTask = useCallback((task: Omit<Task, 'id' | 'createdAt' | 'sortOrder' | 'dueDates'> & { dueDates?: string[] }): Task => {
     const existingCount = tasks.filter((t) => t.thingId === task.thingId).length;
-    const newTask: Task = { ...task, id: generateId(), sortOrder: existingCount, createdAt: new Date().toISOString() };
+    const dueDates = task.dueDates && task.dueDates.length > 0
+      ? task.dueDates
+      : computeAllUpcomingDue(task.schedule, task.lastCompletedDate ?? null, 1).map(d => d.toISOString());
+    const newTask: Task = { ...task, dueDates, id: generateId(), sortOrder: existingCount, createdAt: new Date().toISOString() };
     setTasks((prev) => {
       const updated = [...prev, newTask];
       persist(KEYS.tasks, updated);
@@ -196,14 +225,20 @@ export const [DataProvider, useData] = createContextHook(() => {
     return newTask;
   }, [persist, tasks]);
 
-  const addTasks = useCallback((newTasks: Omit<Task, 'id' | 'createdAt' | 'sortOrder'>[]): Task[] => {
+  const addTasks = useCallback((newTasks: (Omit<Task, 'id' | 'createdAt' | 'sortOrder' | 'dueDates'> & { dueDates?: string[] })[]): Task[] => {
     const existingCount = tasks.filter((t) => t.thingId === newTasks[0]?.thingId).length;
-    const created = newTasks.map((t, i) => ({
-      ...t,
-      id: generateId(),
-      sortOrder: existingCount + i,
-      createdAt: new Date().toISOString(),
-    }));
+    const created: Task[] = newTasks.map((t, i) => {
+      const dueDates = t.dueDates && t.dueDates.length > 0
+        ? t.dueDates
+        : computeAllUpcomingDue(t.schedule, t.lastCompletedDate ?? null, 1).map(d => d.toISOString());
+      return {
+        ...t,
+        dueDates,
+        id: generateId(),
+        sortOrder: existingCount + i,
+        createdAt: new Date().toISOString(),
+      } as Task;
+    });
     setTasks((prev) => {
       const updated = [...prev, ...created];
       persist(KEYS.tasks, updated);
@@ -283,9 +318,13 @@ export const [DataProvider, useData] = createContextHook(() => {
     });
 
     setTasks((prev) => {
-      const updated = prev.map((t) =>
-        t.id === taskId ? { ...t, lastCompletedDate: completedAt } : t
-      );
+      const updated = prev.map((t) => {
+        if (t.id !== taskId) return t;
+        const nextUpcoming = computeAllUpcomingDue(t.schedule, completedAt, 1).map(d => d.toISOString());
+        const remaining = (t.dueDates ?? []).slice(1);
+        const merged = [...nextUpcoming, ...remaining];
+        return { ...t, lastCompletedDate: completedAt, dueDates: merged };
+      });
       persist(KEYS.tasks, updated);
       return updated;
     });
@@ -303,9 +342,12 @@ export const [DataProvider, useData] = createContextHook(() => {
             .filter((l) => l.taskId === deletedLog.taskId)
             .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
           const newLastCompleted = taskLogs.length > 0 ? taskLogs[0].completedAt : null;
-          const updatedTasks = prevTasks.map((t) =>
-            t.id === deletedLog.taskId ? { ...t, lastCompletedDate: newLastCompleted } : t
-          );
+          const updatedTasks = prevTasks.map((t) => {
+            if (t.id !== deletedLog.taskId) return t;
+            const nextUpcoming = computeAllUpcomingDue(t.schedule, newLastCompleted, 1).map(d => d.toISOString());
+            const remaining = (t.dueDates ?? []).slice(1);
+            return { ...t, lastCompletedDate: newLastCompleted, dueDates: [...nextUpcoming, ...remaining] };
+          });
           persist(KEYS.tasks, updatedTasks);
           return updatedTasks;
         });

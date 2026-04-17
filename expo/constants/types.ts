@@ -26,16 +26,39 @@ export interface Thing {
   decomposeDismissed?: boolean;
 }
 
+export type ScheduleKind =
+  | 'interval_from_completion'
+  | 'interval_from_anchor'
+  | 'specific_date_recurring'
+  | 'specific_date_once'
+  | 'day_of_month_pattern'
+  | 'weekly_pattern';
+
+export interface Schedule {
+  kind: ScheduleKind;
+  intervalValue?: number;
+  intervalUnit?: IntervalUnit;
+  anchorDate?: string;
+  month?: number;
+  day?: number;
+  year?: number;
+  nth?: 1 | 2 | 3 | 4 | -1;
+  weekday?: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  monthInterval?: number;
+  weeksInterval?: number;
+  weekdays?: number[];
+}
+
 export interface Task {
   id: string;
   thingId: string;
   name: string;
-  intervalValue: number;
-  intervalUnit: IntervalUnit;
-  lastCompletedDate: string | null;
+  schedule: Schedule;
+  dueDates: string[];
   notes: string;
   sortOrder: number;
   createdAt: string;
+  lastCompletedDate?: string | null;
 }
 
 export interface CompletionLog {

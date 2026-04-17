@@ -33,7 +33,7 @@ export default function BulkTaskAdder() {
   const cnt = useMemo(() => items.filter(i => i.selected).length, [items]);
   const add = useCallback(() => {
     if (!thingId) return;
-    addTasks(items.filter(i => i.selected).map(t => ({ thingId, name: t.name, intervalValue: t.intervalValue, intervalUnit: t.intervalUnit, lastCompletedDate: null, notes: "" })));
+    addTasks(items.filter(i => i.selected).map(t => ({ thingId, name: t.name, schedule: { kind: 'interval_from_completion' as const, intervalValue: t.intervalValue, intervalUnit: t.intervalUnit }, lastCompletedDate: null, notes: "" })));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
   }, [thingId, items, addTasks, router]);
