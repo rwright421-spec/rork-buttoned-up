@@ -88,7 +88,7 @@ export default function HomeScreen() {
     <View style={[s.root, { backgroundColor: colors.background }]}>
       <View style={[s.topBar, { paddingTop: insets.top + 16 }]}>
         <View>
-          <Text style={[s.title, { color: colors.text }]}>Buttoned Up</Text>
+          <Text style={[s.title, { color: colors.text }]}>My Setup</Text>
           {enriched.length > 0 && (
             <Text style={[s.meta, { color: colors.textSecondary }]}>
               {enriched.length} {enriched.length === 1 ? "Area" : "Areas"}
