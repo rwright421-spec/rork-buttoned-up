@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, Settings } from "lucide-react-native";
+import { Home, Settings, ListChecks } from "lucide-react-native";
 import React from "react";
 import { Platform, StyleSheet } from "react-native";
 import { useTheme } from "@/providers/ThemeProvider";
@@ -12,7 +12,8 @@ export default function MainTabLayout() {
   ]);
   return (
     <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: colors.accent, tabBarInactiveTintColor: colors.textSecondary, tabBarStyle, tabBarLabelStyle: { fontSize: 11, fontWeight: "500" as const } }}>
-      <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: ({ color, size }) => <Home size={size} color={color} strokeWidth={1.8} /> }} />
+      <Tabs.Screen name="index" options={{ title: "Tasks", tabBarIcon: ({ color, size }) => <ListChecks size={size} color={color} strokeWidth={1.8} /> }} />
+      <Tabs.Screen name="areas" options={{ title: "Areas", tabBarIcon: ({ color, size }) => <Home size={size} color={color} strokeWidth={1.8} /> }} />
       <Tabs.Screen name="settings" options={{ title: "Settings", tabBarIcon: ({ color, size }) => <Settings size={size} color={color} strokeWidth={1.8} /> }} />
     </Tabs>
   );

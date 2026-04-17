@@ -1,127 +1,383 @@
-import React, { useMemo, useCallback, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Modal,
+  TextInput,
+  Share,
+  Platform,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Plus, X, GripVertical, Check, ArrowUp, ArrowDown } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Check, Search, Share2, ListChecks, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
-import { getTaskStatus, getWorstStatus } from "@/utils/dates";
-import { TaskStatus, Area } from "@/constants/types";
-import AreaCreationFlow from "@/components/AreaCreationFlow";
+import { getTaskStatus, getDueText, getNextDueFromTask, formatDate } from "@/utils/dates";
+import { Task, TaskStatus } from "@/constants/types";
 
-const STATUS_LABELS: Record<TaskStatus, string> = {
+type BucketKey = "overdue" | "today" | "week" | "month" | "later";
+
+interface EnrichedTask {
+  task: Task;
+  thingName: string;
+  areaId: string;
+  areaName: string;
+  nextDue: Date | null;
+  status: TaskStatus;
+  bucket: BucketKey;
+}
+
+const BUCKET_LABELS: Record<BucketKey, string> = {
   overdue: "Overdue",
-  due_soon: "Due Soon",
-  current: "All Current",
-  not_started: "Not Started",
+  today: "Today",
+  week: "This Week",
+  month: "This Month",
+  later: "Later",
 };
 
-function resolveStatusColor(
-  status: TaskStatus,
-  c: { overdue: string; dueSoon: string; current: string; notStarted: string }
-): string {
-  switch (status) {
-    case "overdue": return c.overdue;
-    case "due_soon": return c.dueSoon;
-    case "current": return c.current;
-    case "not_started": return c.notStarted;
-  }
+const BUCKET_ORDER: BucketKey[] = ["overdue", "today", "week", "month", "later"];
+
+function startOfDay(d: Date): Date {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  return r;
 }
 
-interface EnrichedArea extends Area {
-  worstStatus: TaskStatus;
-  overdueCount: number;
-  thingCount: number;
+function bucketForDate(nextDue: Date | null, status: TaskStatus): BucketKey {
+  if (status === "overdue") return "overdue";
+  if (!nextDue) return "later";
+  const today = startOfDay(new Date());
+  const due = startOfDay(nextDue);
+  const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays <= 0) return "today";
+  if (diffDays <= 7) return "week";
+  if (diffDays <= 30) return "month";
+  return "later";
 }
 
-export default function HomeScreen() {
+export default function TasksScreen() {
   const { colors } = useTheme();
-  const { areas, things, tasks, reorderAreas } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { tasks, things, areas, addCompletionLog, logs } = useData();
 
-  const [showAreaModal, setShowAreaModal] = useState(false);
-  const [isReordering, setIsReordering] = useState(false);
+  const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
+  const [search, setSearch] = useState<string>("");
+  const [overdueOnly, setOverdueOnly] = useState<boolean>(false);
 
-  const enriched = useMemo<EnrichedArea[]>(() => {
-    return [...areas]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((a) => {
-        const areaThings = things.filter((t) => t.areaId === a.id);
-        const thingIds = new Set(areaThings.map((t) => t.id));
-        const areaTasks = tasks.filter((t) => thingIds.has(t.thingId));
-        const statuses = areaTasks.map(getTaskStatus);
-        const worst = getWorstStatus(statuses);
-        const overdueCount = statuses.filter((s) => s === "overdue").length;
-        return { ...a, worstStatus: worst, overdueCount, thingCount: areaThings.length };
+  const thingMap = useMemo(() => {
+    const m = new Map<string, { name: string; areaId: string }>();
+    things.forEach((t) => m.set(t.id, { name: t.name, areaId: t.areaId }));
+    return m;
+  }, [things]);
+
+  const areaMap = useMemo(() => {
+    const m = new Map<string, string>();
+    areas.forEach((a) => m.set(a.id, a.name));
+    return m;
+  }, [areas]);
+
+  const enrichedAll = useMemo<EnrichedTask[]>(() => {
+    return tasks.map((task) => {
+      const thing = thingMap.get(task.thingId);
+      const areaId = thing?.areaId ?? "";
+      const areaName = areaMap.get(areaId) ?? "";
+      const nextDue = getNextDueFromTask(task);
+      const status = getTaskStatus(task);
+      const bucket = bucketForDate(nextDue, status);
+      return {
+        task,
+        thingName: thing?.name ?? "",
+        areaId,
+        areaName,
+        nextDue,
+        status,
+        bucket,
+      };
+    });
+  }, [tasks, thingMap, areaMap]);
+
+  const filtered = useMemo<EnrichedTask[]>(() => {
+    const q = search.trim().toLowerCase();
+    return enrichedAll.filter((e) => {
+      if (selectedAreaIds.length > 0 && !selectedAreaIds.includes(e.areaId)) return false;
+      if (overdueOnly && e.bucket !== "overdue") return false;
+      if (q) {
+        const hay = `${e.task.name} ${e.thingName}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [enrichedAll, selectedAreaIds, overdueOnly, search]);
+
+  const buckets = useMemo(() => {
+    const b: Record<BucketKey, EnrichedTask[]> = {
+      overdue: [],
+      today: [],
+      week: [],
+      month: [],
+      later: [],
+    };
+    filtered.forEach((e) => b[e.bucket].push(e));
+    BUCKET_ORDER.forEach((k) => {
+      b[k].sort((a, z) => {
+        const aT = a.nextDue ? a.nextDue.getTime() : Number.MAX_SAFE_INTEGER;
+        const zT = z.nextDue ? z.nextDue.getTime() : Number.MAX_SAFE_INTEGER;
+        return aT - zT;
       });
-  }, [areas, things, tasks]);
+    });
+    return b;
+  }, [filtered]);
 
-  const openCreateArea = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowAreaModal(true);
+  const toggleArea = useCallback((id: string) => {
+    Haptics.selectionAsync();
+    setSelectedAreaIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   }, []);
 
-  const onAreaCreated = useCallback((area: Area) => {
-    setShowAreaModal(false);
-    router.push(`/area/${area.id}`);
-  }, [router]);
+  const clearAreas = useCallback(() => {
+    Haptics.selectionAsync();
+    setSelectedAreaIds([]);
+  }, []);
 
-  const moveArea = useCallback((index: number, direction: "up" | "down") => {
-    const newIndex = direction === "up" ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= enriched.length) return;
+  const quickComplete = useCallback(
+    (taskId: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      addCompletionLog(taskId, new Date().toISOString(), "", []);
+    },
+    [addCompletionLog]
+  );
+
+  const buildTextExport = useCallback((): string => {
+    const today = new Date();
+    const header = `Buttoned Up — ${today.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    })}\n`;
+    const sections: string[] = [header];
+    BUCKET_ORDER.forEach((key) => {
+      const items = buckets[key];
+      if (items.length === 0) return;
+      sections.push(`\n${BUCKET_LABELS[key].toUpperCase()}`);
+      items.forEach((e) => {
+        const dueStr = e.nextDue ? formatDate(e.nextDue.toISOString()) : "No date";
+        const statusTail =
+          e.status === "overdue" ? ` (${getDueText(e.task).toLowerCase()})` : "";
+        const areaBit = e.areaName ? ` (${e.areaName})` : "";
+        sections.push(
+          `[ ] ${e.task.name} — ${e.thingName}${areaBit} — Due ${dueStr}${statusTail}`
+        );
+      });
+    });
+    return sections.join("\n");
+  }, [buckets]);
+
+  const buildCsvExport = useCallback((): string => {
+    const esc = (v: string): string => {
+      if (/[",\n]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+      return v;
+    };
+    const lines: string[] = ["Area,Thing,Task,DueDate,Status,LastCompleted"];
+    filtered.forEach((e) => {
+      const dueStr = e.nextDue ? e.nextDue.toISOString().slice(0, 10) : "";
+      const last = e.task.lastCompletedDate
+        ? new Date(e.task.lastCompletedDate).toISOString().slice(0, 10)
+        : "";
+      lines.push(
+        [e.areaName, e.thingName, e.task.name, dueStr, e.status, last]
+          .map(esc)
+          .join(",")
+      );
+    });
+    return lines.join("\n");
+  }, [filtered]);
+
+  const onShareText = useCallback(async () => {
+    try {
+      const message = buildTextExport();
+      if (Platform.OS === "web") {
+        if (typeof navigator !== "undefined" && (navigator as any).share) {
+          await (navigator as any).share({ text: message, title: "Buttoned Up" });
+        } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(message);
+          Alert.alert("Copied", "Task list copied to clipboard.");
+        } else {
+          Alert.alert("Export", message);
+        }
+      } else {
+        await Share.share({ message });
+      }
+    } catch (err) {
+      console.log("[TasksScreen] share text error", err);
+    }
+  }, [buildTextExport]);
+
+  const onShareCsv = useCallback(async () => {
+    try {
+      const csv = buildCsvExport();
+      if (Platform.OS === "web") {
+        if (typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(csv);
+          Alert.alert("CSV Copied", "CSV content copied to clipboard.");
+        } else {
+          Alert.alert("CSV", csv);
+        }
+      } else {
+        await Share.share({ message: csv, title: "Buttoned Up Tasks.csv" });
+      }
+    } catch (err) {
+      console.log("[TasksScreen] share csv error", err);
+    }
+  }, [buildCsvExport]);
+
+  const openShareMenu = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const swapped = [...enriched];
-    [swapped[index], swapped[newIndex]] = [swapped[newIndex], swapped[index]];
-    reorderAreas(swapped);
-  }, [enriched, reorderAreas]);
+    Alert.alert(
+      "Export",
+      "Share your tasks",
+      [
+        { text: "Share as text", onPress: onShareText },
+        { text: "Share CSV", onPress: onShareCsv },
+        { text: "Cancel", style: "cancel" },
+      ],
+      { cancelable: true }
+    );
+  }, [onShareText, onShareCsv]);
+
+  const totalVisible = filtered.length;
+  const totalLogs = logs.length;
 
   return (
     <View style={[s.root, { backgroundColor: colors.background }]}>
       <View style={[s.topBar, { paddingTop: insets.top + 16 }]}>
-        <View>
-          <Text style={[s.title, { color: colors.text }]}>Buttoned Up</Text>
-          {enriched.length > 0 && (
+        <View style={s.titleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.title, { color: colors.text }]}>Tasks</Text>
             <Text style={[s.meta, { color: colors.textSecondary }]}>
-              {enriched.length} {enriched.length === 1 ? "Area" : "Areas"}
+              {totalVisible} {totalVisible === 1 ? "task" : "tasks"}
+              {totalLogs > 0 ? ` · ${totalLogs} completions` : ""}
             </Text>
-          )}
-        </View>
-        <View style={s.topActions}>
-          {enriched.length > 1 && (
-            <TouchableOpacity
-              style={[s.actionBtn, { backgroundColor: isReordering ? colors.accent : colors.card, borderColor: isReordering ? colors.accent : colors.border }]}
-              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setIsReordering(p => !p); }}
-              activeOpacity={0.7}
-            >
-              {isReordering ? <Check size={18} color="#FFF" strokeWidth={2.5} /> : <GripVertical size={18} color={colors.textSecondary} />}
-            </TouchableOpacity>
-          )}
+          </View>
           <TouchableOpacity
-            testID="add-area-btn"
-            style={[s.fab, { backgroundColor: colors.accent }]}
-            onPress={openCreateArea}
+            testID="share-btn"
+            style={[s.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={openShareMenu}
             activeOpacity={0.7}
           >
-            <Plus size={22} color="#FFFFFF" strokeWidth={2.5} />
+            <Share2 size={18} color={colors.text} strokeWidth={1.8} />
           </TouchableOpacity>
         </View>
+
+        <View style={[s.searchWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Search size={16} color={colors.textSecondary} strokeWidth={1.8} />
+          <TextInput
+            testID="search-input"
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search tasks or things"
+            placeholderTextColor={colors.textSecondary}
+            style={[s.searchInput, { color: colors.text }]}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch("")} activeOpacity={0.6}>
+              <X size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {areas.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.chipsRow}
+            style={s.chipsScroll}
+          >
+            <TouchableOpacity
+              onPress={clearAreas}
+              style={[
+                s.chip,
+                {
+                  backgroundColor: selectedAreaIds.length === 0 ? colors.accent : colors.card,
+                  borderColor: selectedAreaIds.length === 0 ? colors.accent : colors.border,
+                },
+              ]}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  s.chipText,
+                  { color: selectedAreaIds.length === 0 ? "#FFF" : colors.text },
+                ]}
+              >
+                All
+              </Text>
+            </TouchableOpacity>
+            {areas.map((a) => {
+              const active = selectedAreaIds.includes(a.id);
+              return (
+                <TouchableOpacity
+                  key={a.id}
+                  onPress={() => toggleArea(a.id)}
+                  style={[
+                    s.chip,
+                    {
+                      backgroundColor: active ? colors.accent : colors.card,
+                      borderColor: active ? colors.accent : colors.border,
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[s.chipEmoji]}>{a.emoji}</Text>
+                  <Text style={[s.chipText, { color: active ? "#FFF" : colors.text }]}>
+                    {a.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.selectionAsync();
+            setOverdueOnly((p) => !p);
+          }}
+          style={[
+            s.overdueToggle,
+            {
+              backgroundColor: overdueOnly ? colors.overdue + "18" : "transparent",
+              borderColor: overdueOnly ? colors.overdue : colors.border,
+            },
+          ]}
+          activeOpacity={0.7}
+        >
+          <Text
+            style={[
+              s.overdueToggleText,
+              { color: overdueOnly ? colors.overdue : colors.textSecondary },
+            ]}
+          >
+            {overdueOnly ? "Showing overdue only" : "Overdue only"}
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      {enriched.length === 0 ? (
+      {totalVisible === 0 ? (
         <View style={s.empty}>
-          <Text style={s.emptyIcon}>🔧</Text>
-          <Text style={[s.emptyH, { color: colors.text }]}>Nothing to maintain yet.</Text>
+          <ListChecks size={48} color={colors.border} strokeWidth={1.5} />
+          <Text style={[s.emptyH, { color: colors.text }]}>No tasks match</Text>
           <Text style={[s.emptyB, { color: colors.textSecondary }]}>
-            Tap + to create your first Area — like Home, Garage, or Cabin.
+            {tasks.length === 0
+              ? "Add an Area and Thing to start tracking tasks."
+              : "Try clearing your filters or search."}
           </Text>
         </View>
       ) : (
@@ -130,118 +386,168 @@ export default function HomeScreen() {
           contentContainerStyle={[s.scrollInner, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
-          {enriched.map((a, i) => {
-            const bc = resolveStatusColor(a.worstStatus, colors);
+          {BUCKET_ORDER.map((key) => {
+            const items = buckets[key];
+            if (items.length === 0) return null;
+            const accent =
+              key === "overdue"
+                ? colors.overdue
+                : key === "today"
+                ? colors.dueSoon
+                : colors.textSecondary;
             return (
-              <View key={a.id} style={s.rowWrap}>
-                {isReordering && (
-                  <View style={s.reorderControls}>
-                    <TouchableOpacity
-                      onPress={() => moveArea(i, "up")}
-                      style={[s.reorderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                      disabled={i === 0}
-                      activeOpacity={0.6}
+              <View key={key} style={s.bucket}>
+                <View style={s.bucketHeader}>
+                  <View style={[s.bucketDot, { backgroundColor: accent }]} />
+                  <Text style={[s.bucketTitle, { color: colors.text }]}>
+                    {BUCKET_LABELS[key]}
+                  </Text>
+                  <Text style={[s.bucketCount, { color: colors.textSecondary }]}>
+                    {items.length}
+                  </Text>
+                </View>
+                {items.map((e) => {
+                  const statusColor =
+                    e.status === "overdue"
+                      ? colors.overdue
+                      : e.status === "due_soon"
+                      ? colors.dueSoon
+                      : e.status === "current"
+                      ? colors.current
+                      : colors.notStarted;
+                  return (
+                    <View
+                      key={e.task.id}
+                      style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}
                     >
-                      <ArrowUp size={16} color={i === 0 ? colors.border : colors.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => moveArea(i, "down")}
-                      style={[s.reorderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                      disabled={i === enriched.length - 1}
-                      activeOpacity={0.6}
-                    >
-                      <ArrowDown size={16} color={i === enriched.length - 1 ? colors.border : colors.text} />
-                    </TouchableOpacity>
-                  </View>
-                )}
-                <TouchableOpacity
-                  testID={`area-${a.id}`}
-                  style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  onPress={() => {
-                    if (isReordering) return;
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push(`/area/${a.id}`);
-                  }}
-                  activeOpacity={isReordering ? 1 : 0.7}
-                >
-                  <View style={s.cardTop}>
-                    <Text style={s.cardEmoji}>{a.emoji}</Text>
-                    <View style={[s.statusDot, { backgroundColor: bc }]} />
-                  </View>
-                  <Text style={[s.cardName, { color: colors.text }]} numberOfLines={1}>{a.name}</Text>
-                  <View style={s.cardMeta}>
-                    <Text style={[s.cardMetaText, { color: colors.textSecondary }]}>
-                      {a.thingCount} {a.thingCount === 1 ? "Thing" : "Things"}
-                    </Text>
-                    {a.overdueCount > 0 && (
-                      <>
-                        <Text style={[s.cardMetaDot, { color: colors.textSecondary }]}>·</Text>
-                        <Text style={[s.cardMetaText, { color: colors.overdue, fontWeight: "600" as const }]}>
-                          {a.overdueCount} overdue
+                      <TouchableOpacity
+                        testID={`complete-${e.task.id}`}
+                        onPress={() => quickComplete(e.task.id)}
+                        style={[s.checkBtn, { borderColor: statusColor }]}
+                        activeOpacity={0.6}
+                      >
+                        <Check size={16} color={statusColor} strokeWidth={2.5} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          Haptics.selectionAsync();
+                          router.push(`/task/${e.task.id}`);
+                        }}
+                        style={s.rowBody}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[s.rowName, { color: colors.text }]}
+                          numberOfLines={1}
+                        >
+                          {e.task.name}
                         </Text>
-                      </>
-                    )}
-                  </View>
-                  <View style={[s.pill, { backgroundColor: bc + "14", alignSelf: "flex-start" as const, marginTop: 8 }]}>
-                    <Text style={[s.pillT, { color: bc }]}>{STATUS_LABELS[a.worstStatus]}</Text>
-                  </View>
-                </TouchableOpacity>
+                        <Text
+                          style={[s.rowSub, { color: colors.textSecondary }]}
+                          numberOfLines={1}
+                        >
+                          {e.thingName}
+                          {e.areaName ? ` · ${e.areaName}` : ""}
+                        </Text>
+                      </TouchableOpacity>
+                      <Text
+                        style={[s.rowDue, { color: statusColor }]}
+                        numberOfLines={2}
+                      >
+                        {getDueText(e.task)}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
             );
           })}
         </ScrollView>
       )}
-
-      <Modal visible={showAreaModal} animationType="slide" onRequestClose={() => setShowAreaModal(false)} presentationStyle="pageSheet">
-        <View style={[s.sheet, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
-          <View style={s.sheetHeader}>
-            <Text style={[s.sheetTitle, { color: colors.text }]}>New Area</Text>
-            <TouchableOpacity onPress={() => setShowAreaModal(false)} style={s.sheetClose} activeOpacity={0.6}>
-              <X size={22} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-          <AreaCreationFlow onDone={onAreaCreated} onCancel={() => setShowAreaModal(false)} />
-        </View>
-      </Modal>
     </View>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1 },
-  topBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
+  topBar: { paddingHorizontal: 20, paddingBottom: 12 },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   title: { fontSize: 30, fontWeight: "800" as const, letterSpacing: -0.6 },
   meta: { fontSize: 14, marginTop: 2 },
-  topActions: { flexDirection: "row", gap: 10, alignItems: "center" },
-  actionBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  fab: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  iconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 14,
+  },
+  searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
+  chipsScroll: { marginTop: 12 },
+  chipsRow: { gap: 8, paddingRight: 8 },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  chipEmoji: { fontSize: 13 },
+  chipText: { fontSize: 13, fontWeight: "600" as const },
+  overdueToggle: {
+    marginTop: 10,
+    alignSelf: "flex-start" as const,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  overdueToggleText: { fontSize: 12, fontWeight: "600" as const },
   scroll: { flex: 1 },
-  scrollInner: { paddingHorizontal: 20, gap: 12 },
-  rowWrap: { flexDirection: "row", alignItems: "center" },
-  reorderControls: { flexDirection: "column", gap: 4, marginRight: 8 },
-  reorderBtn: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center", borderWidth: 1 },
-  card: { flex: 1, borderRadius: 16, padding: 18, borderWidth: 1 },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  cardEmoji: { fontSize: 42 },
-  statusDot: { width: 12, height: 12, borderRadius: 6 },
-  cardName: { fontSize: 22, fontWeight: "700" as const, letterSpacing: -0.3 },
-  cardMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
-  cardMetaText: { fontSize: 14 },
-  cardMetaDot: { fontSize: 14 },
-  pill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  pillT: { fontSize: 11, fontWeight: "700" as const, letterSpacing: 0.3 },
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40 },
-  emptyIcon: { fontSize: 64, marginBottom: 16 },
-  emptyH: { fontSize: 20, fontWeight: "600" as const, marginBottom: 8, textAlign: "center" },
-  emptyB: { fontSize: 15, textAlign: "center", lineHeight: 22 },
-  sheet: { flex: 1 },
-  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 8 },
-  sheetTitle: { fontSize: 18, fontWeight: "700" as const },
-  sheetClose: { padding: 6 },
+  scrollInner: { paddingHorizontal: 20, paddingTop: 8, gap: 20 },
+  bucket: { gap: 8 },
+  bucketHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 2 },
+  bucketDot: { width: 8, height: 8, borderRadius: 4 },
+  bucketTitle: { fontSize: 15, fontWeight: "700" as const, letterSpacing: -0.2, flex: 1 },
+  bucketCount: { fontSize: 13, fontWeight: "600" as const },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  checkBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowBody: { flex: 1, gap: 2 },
+  rowName: { fontSize: 15, fontWeight: "600" as const, letterSpacing: -0.2 },
+  rowSub: { fontSize: 12 },
+  rowDue: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    maxWidth: 110,
+    textAlign: "right" as const,
+  },
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, gap: 10 },
+  emptyH: { fontSize: 18, fontWeight: "700" as const, marginTop: 6 },
+  emptyB: { fontSize: 14, textAlign: "center" as const, lineHeight: 20 },
 });
