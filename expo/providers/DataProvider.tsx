@@ -295,6 +295,63 @@ export const [DataProvider, useData] = createContextHook(() => {
     console.log('[DataProvider] Moved task', taskId, 'to thing', destinationThingId);
   }, [persist]);
 
+  const duplicateTaskToThing = useCallback((taskId: string, destinationThingId: string): Task | null => {
+    const source = tasks.find((t) => t.id === taskId);
+    if (!source) return null;
+    const destCount = tasks.filter((t) => t.thingId === destinationThingId).length;
+    const newTask: Task = {
+      id: generateId(),
+      thingId: destinationThingId,
+      name: source.name,
+      schedule: source.schedule,
+      dueDates: computeAllUpcomingDue(source.schedule, null, 1).map((d) => d.toISOString()),
+      notes: source.notes,
+      sortOrder: destCount,
+      createdAt: new Date().toISOString(),
+      lastCompletedDate: null,
+    };
+    setTasks((prev) => {
+      const updated = [...prev, newTask];
+      persist(KEYS.tasks, updated);
+      return updated;
+    });
+    console.log('[DataProvider] Duplicated task', taskId, 'to thing', destinationThingId);
+    return newTask;
+  }, [persist, tasks]);
+
+  const duplicateAllTasksToThing = useCallback((sourceThingId: string, destinationThingId: string): { created: number; skipped: number } => {
+    const sourceTasks = tasks.filter((t) => t.thingId === sourceThingId).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const destTasks = tasks.filter((t) => t.thingId === destinationThingId);
+    const existingNames = new Set(destTasks.map((t) => t.name.toLowerCase()));
+    let skipped = 0;
+    const toCreate: Task[] = [];
+    let sortCounter = destTasks.length;
+    sourceTasks.forEach((src) => {
+      if (existingNames.has(src.name.toLowerCase())) { skipped++; return; }
+      existingNames.add(src.name.toLowerCase());
+      toCreate.push({
+        id: generateId(),
+        thingId: destinationThingId,
+        name: src.name,
+        schedule: src.schedule,
+        dueDates: computeAllUpcomingDue(src.schedule, null, 1).map((d) => d.toISOString()),
+        notes: src.notes,
+        sortOrder: sortCounter++,
+        createdAt: new Date().toISOString(),
+        lastCompletedDate: null,
+      });
+    });
+    if (toCreate.length > 0) {
+      setTasks((prev) => {
+        const updated = [...prev, ...toCreate];
+        persist(KEYS.tasks, updated);
+        return updated;
+      });
+    }
+    console.log('[DataProvider] Bulk duplicate: created', toCreate.length, 'skipped', skipped);
+    return { created: toCreate.length, skipped };
+  }, [persist, tasks]);
+
   const addCompletionLog = useCallback((taskId: string, completedAt: string, notes: string, photoRefs?: PhotoRef[]): CompletionLog => {
     const newLog: CompletionLog = { id: generateId(), taskId, completedAt, notes, photoRefs: photoRefs ?? [] };
 
@@ -500,6 +557,8 @@ export const [DataProvider, useData] = createContextHook(() => {
     deleteTask,
     reorderTasks,
     moveTaskToThing,
+    duplicateTaskToThing,
+    duplicateAllTasksToThing,
     addCompletionLog,
     updateCompletionLog,
     deleteCompletionLog,

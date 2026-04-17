@@ -2,7 +2,7 @@ import React, { useMemo, useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Image, Platform, ActionSheetIOS } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, Pencil, Trash2, Plus, GripVertical, ArrowUp, ArrowDown, Check, Sparkles, X, Camera, ImageIcon } from "lucide-react-native";
+import { ArrowLeft, Pencil, Trash2, Plus, GripVertical, ArrowUp, ArrowDown, Check, Sparkles, X, Camera, ImageIcon, MoreHorizontal } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
@@ -11,16 +11,18 @@ import { TaskStatus, Task, Thing, PhotoRef } from "@/constants/types";
 import { matchDecomposeTemplate } from "@/constants/templates";
 import { pickFromLibrary, takePhoto } from "@/utils/photos";
 import PhotoThumb from "@/components/PhotoThumb";
+import ThingPicker from "@/components/ThingPicker";
 
 const SC: Record<TaskStatus, string> = { overdue: "#EF4444", due_soon: "#F59E0B", current: "#22C55E", not_started: "#9CA3AF" };
 
 export default function ThingView() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { things, tasks, logs, deleteThing, reorderTasks, addThing, moveTaskToThing, updateThing } = useData();
+  const { things, tasks, logs, deleteThing, reorderTasks, addThing, moveTaskToThing, updateThing, duplicateAllTasksToThing } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [isReordering, setIsReordering] = useState(false);
+  const [showBulkDuplicate, setShowBulkDuplicate] = useState(false);
 
   const thing = things.find(e => e.id === id);
 
@@ -73,6 +75,38 @@ export default function ThingView() {
     const matchCount = eqTasks.filter(t => matchDecomposeTemplate(t.name)).length;
     return matchCount >= 2;
   }, [thing, eqTasks]);
+
+  const bulkDuplicate = useCallback((destThingId: string) => {
+    if (!thing) return;
+    if (destThingId === thing.id) { setShowBulkDuplicate(false); return; }
+    const { created, skipped } = duplicateAllTasksToThing(thing.id, destThingId);
+    setShowBulkDuplicate(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert(
+      "Copied Tasks",
+      `Copied ${created} new Task${created === 1 ? '' : 's'}, skipped ${skipped} duplicate${skipped === 1 ? '' : 's'}.`
+    );
+  }, [thing, duplicateAllTasksToThing]);
+
+  const showMoreActions = useCallback(() => {
+    if (!thing) return;
+    if (eqTasks.length === 0) {
+      Alert.alert("No tasks", "This Thing has no Tasks to copy.");
+      return;
+    }
+    const options = ["Copy all Tasks to another Thing\u2026", "Cancel"];
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: 1 },
+        (i) => { if (i === 0) setShowBulkDuplicate(true); }
+      );
+    } else {
+      Alert.alert("Thing actions", undefined, [
+        { text: "Copy all Tasks to another Thing\u2026", onPress: () => setShowBulkDuplicate(true) },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  }, [thing, eqTasks.length]);
 
   const dismissDecompose = useCallback(() => {
     if (!thing) return;
@@ -189,6 +223,9 @@ export default function ThingView() {
               )}
             </TouchableOpacity>
           )}
+          <TouchableOpacity onPress={showMoreActions} activeOpacity={0.6} testID="thing-actions">
+            <MoreHorizontal size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push(`/thing/edit/${thing.id}`)} activeOpacity={0.6}>
             <Pencil size={20} color={colors.textSecondary} />
           </TouchableOpacity>
@@ -318,6 +355,14 @@ export default function ThingView() {
           ))}
         </ScrollView>
       )}
+
+      <ThingPicker
+        visible={showBulkDuplicate}
+        title="Copy all Tasks to another Thing"
+        currentThingId={thing.id}
+        onClose={() => setShowBulkDuplicate(false)}
+        onSelect={bulkDuplicate}
+      />
 
       <Modal visible={!!photoViewer} transparent animationType="fade" onRequestClose={() => setPhotoViewer(null)}>
         <View style={st.viewerOverlay}>

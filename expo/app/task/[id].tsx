@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Animated as RNAnimated, Image } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated as RNAnimated, Image, Platform, ActionSheetIOS } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, Pencil, Trash2, CheckCircle, Undo2, ClipboardList, MoveRight, X, Calendar, Camera } from "lucide-react-native";
+import { ArrowLeft, Pencil, Trash2, CheckCircle, Undo2, ClipboardList, MoveRight, Calendar, Camera, MoreHorizontal } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
@@ -11,6 +11,7 @@ import { TaskStatus, PhotoRef, CompletionLog } from "@/constants/types";
 import CalendarPicker from "@/components/CalendarPicker";
 import CompletionModal from "@/components/CompletionModal";
 import CompletionDetailSheet from "@/components/CompletionDetailSheet";
+import ThingPicker from "@/components/ThingPicker";
 
 const SI: Record<TaskStatus, { label: string; color: string }> = {
   overdue: { label: "Overdue", color: "#EF4444" }, due_soon: { label: "Due Soon", color: "#F59E0B" },
@@ -21,7 +22,7 @@ const UNDO_TIMEOUT = 6000;
 export default function TaskView() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { tasks, things, areas, deleteTask, addCompletionLog, getLogsForTask, deleteCompletionLog, updateCompletionLog, moveTaskToThing, updateTask } = useData();
+  const { tasks, things, deleteTask, addCompletionLog, getLogsForTask, deleteCompletionLog, updateCompletionLog, moveTaskToThing, duplicateTaskToThing, updateTask } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const task = tasks.find(t => t.id === id);
@@ -32,6 +33,7 @@ export default function TaskView() {
   const [modal, setModal] = useState(false);
   const [undoLogId, setUndoLogId] = useState<string | null>(null);
   const [showMove, setShowMove] = useState(false);
+  const [showDuplicate, setShowDuplicate] = useState(false);
   const [showOverride, setShowOverride] = useState(false);
   const [selectedLog, setSelectedLog] = useState<CompletionLog | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,12 +92,33 @@ export default function TaskView() {
     setShowMove(false);
   }, [task, moveTaskToThing]);
 
-  const thingsByArea = useMemo(() => {
-    return [...areas].sort((a, b) => a.sortOrder - b.sortOrder).map(a => ({
-      area: a,
-      things: things.filter(t => t.areaId === a.id).sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0)),
-    }));
-  }, [areas, things]);
+  const pickDuplicateDest = useCallback((destThingId: string) => {
+    if (!task) return;
+    const created = duplicateTaskToThing(task.id, destThingId);
+    setShowDuplicate(false);
+    if (created) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const destThing = things.find(t => t.id === destThingId);
+      Alert.alert("Duplicated", `Duplicated ${task.name} to ${destThing?.name ?? 'Thing'}.`);
+    }
+  }, [task, duplicateTaskToThing, things]);
+
+  const showActions = useCallback(() => {
+    if (!task) return;
+    const options = ["Move to another Thing\u2026", "Duplicate to another Thing\u2026", "Cancel"];
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: 2 },
+        (i) => { if (i === 0) setShowMove(true); if (i === 1) setShowDuplicate(true); }
+      );
+    } else {
+      Alert.alert("Task actions", undefined, [
+        { text: "Move to another Thing\u2026", onPress: () => setShowMove(true) },
+        { text: "Duplicate to another Thing\u2026", onPress: () => setShowDuplicate(true) },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  }, [task]);
 
   const updatedSelectedLog = useMemo(() => {
     if (!selectedLog) return null;
@@ -123,7 +146,8 @@ export default function TaskView() {
         <TouchableOpacity onPress={() => router.back()} style={st.back} activeOpacity={0.6}><ArrowLeft size={24} color={colors.text} /></TouchableOpacity>
         <Text style={[st.ht, { color: colors.text }]} numberOfLines={1}>{task.name}</Text>
         <View style={st.ha}>
-          <TouchableOpacity onPress={() => setShowMove(true)} activeOpacity={0.6}><MoveRight size={20} color={colors.textSecondary} /></TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowMove(true)} activeOpacity={0.6} testID="move-task"><MoveRight size={20} color={colors.textSecondary} /></TouchableOpacity>
+          <TouchableOpacity onPress={showActions} activeOpacity={0.6} testID="task-actions"><MoreHorizontal size={20} color={colors.textSecondary} /></TouchableOpacity>
           <TouchableOpacity onPress={() => router.push(`/task/edit/${task.id}`)} activeOpacity={0.6}><Pencil size={20} color={colors.textSecondary} /></TouchableOpacity>
           <TouchableOpacity onPress={del} activeOpacity={0.6}><Trash2 size={20} color="#EF4444" /></TouchableOpacity>
         </View>
@@ -231,41 +255,19 @@ export default function TaskView() {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }}
       />
-      <Modal visible={showMove} transparent animationType="slide" onRequestClose={() => setShowMove(false)}>
-        <View style={st.moveOverlay}>
-          <View style={[st.moveSheet, { backgroundColor: colors.card, paddingBottom: insets.bottom + 20 }]}>
-            <View style={st.moveHeader}>
-              <Text style={[st.moveTitle, { color: colors.text }]}>Move to another Thing</Text>
-              <TouchableOpacity onPress={() => setShowMove(false)} hitSlop={8}><X size={22} color={colors.textSecondary} /></TouchableOpacity>
-            </View>
-            <ScrollView style={{ maxHeight: 480 }}>
-              {thingsByArea.map(({ area, things: areaThings }) => (
-                <View key={area.id} style={{ marginBottom: 10 }}>
-                  <Text style={[st.moveAreaLabel, { color: colors.textSecondary }]}>{area.emoji} {area.name}</Text>
-                  {areaThings.length === 0 ? (
-                    <Text style={[st.moveEmpty, { color: colors.textSecondary }]}>No Things yet</Text>
-                  ) : areaThings.map(th => {
-                    const isCurrent = th.id === task.thingId;
-                    return (
-                      <TouchableOpacity
-                        key={th.id}
-                        style={[st.moveRow, { borderColor: colors.border, opacity: isCurrent ? 0.5 : 1 }]}
-                        onPress={() => pickDestination(th.id)}
-                        disabled={isCurrent}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={st.moveEmoji}>{th.emoji}</Text>
-                        <Text style={[st.moveName, { color: colors.text }]}>{th.name}</Text>
-                        {isCurrent && <Text style={[st.moveCurrent, { color: colors.textSecondary }]}>Current</Text>}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <ThingPicker
+        visible={showMove}
+        title="Move to another Thing"
+        currentThingId={task.thingId}
+        onClose={() => setShowMove(false)}
+        onSelect={pickDestination}
+      />
+      <ThingPicker
+        visible={showDuplicate}
+        title="Duplicate to another Thing"
+        onClose={() => setShowDuplicate(false)}
+        onSelect={pickDuplicateDest}
+      />
     </View>
   );
 }
@@ -311,14 +313,4 @@ const st = StyleSheet.create({
   undoText: { fontSize: 14, fontWeight: "600" as const },
   undoBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   undoBtnText: { fontSize: 14, fontWeight: "700" as const },
-  moveOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  moveSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 20 },
-  moveHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  moveTitle: { fontSize: 18, fontWeight: "700" as const },
-  moveAreaLabel: { fontSize: 12, fontWeight: "700" as const, letterSpacing: 0.5, marginBottom: 6, textTransform: "uppercase" as const },
-  moveEmpty: { fontSize: 13, paddingLeft: 8, paddingVertical: 6 },
-  moveRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, gap: 10, marginBottom: 6 },
-  moveEmoji: { fontSize: 20 },
-  moveName: { flex: 1, fontSize: 15, fontWeight: "500" as const },
-  moveCurrent: { fontSize: 12 },
 });
