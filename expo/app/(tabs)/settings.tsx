@@ -17,7 +17,7 @@ export default function AppSettingsScreen() {
   const insets = useSafeAreaInsets();
   const confirmReset = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert("Reset All Data", "This will permanently delete all equipment, tasks, and history. This cannot be undone.", [
+    Alert.alert("Start Over", "This will permanently delete all Areas, Things, Tasks, and history. This cannot be undone.", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete Everything", style: "destructive", onPress: () => { resetAllData(); Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } },
     ]);
@@ -50,7 +50,7 @@ export default function AppSettingsScreen() {
         </View>
         <Text style={[styles.label, { color: colors.textSecondary }]}>DATA</Text>
         <TouchableOpacity testID="reset-btn" style={[styles.group, styles.dangerRow, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={confirmReset} activeOpacity={0.6}>
-          <Trash2 size={18} color="#EF4444" strokeWidth={2} /><Text style={styles.dangerLabel}>Reset All Data</Text>
+          <Trash2 size={18} color="#EF4444" strokeWidth={2} /><Text style={styles.dangerLabel}>Start Over</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>

@@ -1,6 +1,6 @@
-import { EquipmentType, TemplateTask } from './types';
+import { ThingType, TemplateTask } from './types';
 
-export const equipmentEmojis: Record<EquipmentType, string> = {
+export const thingEmojis: Record<ThingType, string> = {
   home: '🏠',
   auto: '🚗',
   rental: '🏘️',
@@ -12,7 +12,7 @@ export const equipmentEmojis: Record<EquipmentType, string> = {
   custom: '🔧',
 };
 
-export const equipmentTypeLabels: Record<EquipmentType, string> = {
+export const thingTypeLabels: Record<ThingType, string> = {
   home: 'Home',
   auto: 'Auto',
   rental: 'Rental',
@@ -24,7 +24,7 @@ export const equipmentTypeLabels: Record<EquipmentType, string> = {
   custom: 'Custom',
 };
 
-export const templateTasks: Record<EquipmentType, TemplateTask[]> = {
+export const templateTasks: Record<ThingType, TemplateTask[]> = {
   home: [
     { name: 'HVAC Filter', intervalValue: 3, intervalUnit: 'months' },
     { name: 'Pest Control', intervalValue: 3, intervalUnit: 'months' },
@@ -103,3 +103,109 @@ export const templateTasks: Record<EquipmentType, TemplateTask[]> = {
   ],
   custom: [],
 };
+
+export interface DecomposeTemplate {
+  name: string;
+  emoji: string;
+  type: ThingType;
+  keywords: string[];
+  tasks: TemplateTask[];
+}
+
+export const decomposeTemplates: DecomposeTemplate[] = [
+  {
+    name: 'HVAC System',
+    emoji: '🌬️',
+    type: 'home',
+    keywords: ['hvac', 'air filter', 'furnace', 'a/c', 'ac filter'],
+    tasks: [
+      { name: 'HVAC Filter', intervalValue: 3, intervalUnit: 'months' },
+      { name: 'HVAC Service', intervalValue: 12, intervalUnit: 'months' },
+    ],
+  },
+  {
+    name: 'Water Heater',
+    emoji: '🚿',
+    type: 'home',
+    keywords: ['water heater', 'heater flush', 'tank flush'],
+    tasks: [
+      { name: 'Water Heater Flush', intervalValue: 12, intervalUnit: 'months' },
+      { name: 'Water Heater Inspection', intervalValue: 12, intervalUnit: 'months' },
+    ],
+  },
+  {
+    name: 'Chimney',
+    emoji: '🔥',
+    type: 'home',
+    keywords: ['chimney', 'fireplace'],
+    tasks: [
+      { name: 'Chimney Cleaning', intervalValue: 12, intervalUnit: 'months' },
+    ],
+  },
+  {
+    name: 'Gutters',
+    emoji: '🏠',
+    type: 'home',
+    keywords: ['gutter', 'downspout'],
+    tasks: [
+      { name: 'Gutter Cleaning', intervalValue: 6, intervalUnit: 'months' },
+    ],
+  },
+  {
+    name: 'Dryer',
+    emoji: '🧺',
+    type: 'home',
+    keywords: ['dryer', 'vent cleaning'],
+    tasks: [
+      { name: 'Dryer Vent Cleaning', intervalValue: 6, intervalUnit: 'months' },
+    ],
+  },
+  {
+    name: 'Water Filter',
+    emoji: '💧',
+    type: 'home',
+    keywords: ['water filter', 'whole-house filter'],
+    tasks: [
+      { name: 'Water Filter Change', intervalValue: 6, intervalUnit: 'months' },
+    ],
+  },
+  {
+    name: 'Smoke Detectors',
+    emoji: '🚨',
+    type: 'home',
+    keywords: ['smoke detector', 'co detector', 'carbon monoxide'],
+    tasks: [
+      { name: 'Smoke Detector Battery', intervalValue: 6, intervalUnit: 'months' },
+      { name: 'Smoke/CO Test', intervalValue: 12, intervalUnit: 'months' },
+    ],
+  },
+  {
+    name: 'Pest Control',
+    emoji: '🐜',
+    type: 'home',
+    keywords: ['pest', 'exterminator', 'bug'],
+    tasks: [
+      { name: 'Pest Control', intervalValue: 3, intervalUnit: 'months' },
+    ],
+  },
+  {
+    name: 'Exterior',
+    emoji: '🧱',
+    type: 'home',
+    keywords: ['exterior', 'caulking', 'siding', 'paint'],
+    tasks: [
+      { name: 'Exterior Caulking', intervalValue: 12, intervalUnit: 'months' },
+      { name: 'Exterior Inspection', intervalValue: 12, intervalUnit: 'months' },
+    ],
+  },
+];
+
+export function matchDecomposeTemplate(taskName: string): DecomposeTemplate | null {
+  const lower = taskName.toLowerCase();
+  for (const tpl of decomposeTemplates) {
+    for (const kw of tpl.keywords) {
+      if (lower.includes(kw)) return tpl;
+    }
+  }
+  return null;
+}

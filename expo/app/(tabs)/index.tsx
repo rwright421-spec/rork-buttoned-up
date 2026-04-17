@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useState, useRef } from "react";
+import React, { useMemo, useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -6,33 +6,16 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
-  Animated,
   Modal,
-  Platform,
-  Pressable,
 } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  Plus,
-  GripVertical,
-  ChevronDown,
-  ChevronRight,
-  FolderPlus,
-  ArrowUp,
-  ArrowDown,
-  Pencil,
-  Trash2,
-  X,
-  Check,
-  FolderOpen,
-} from "lucide-react-native";
+import { Plus, X, GripVertical, Check, ArrowUp, ArrowDown } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
-import { getTaskStatus, getWorstStatus, statusSortKey } from "@/utils/dates";
-import { TaskStatus, Equipment, EquipmentGroup } from "@/constants/types";
+import { getTaskStatus, getWorstStatus } from "@/utils/dates";
+import { TaskStatus, Area } from "@/constants/types";
 import EmojiPicker from "@/components/EmojiPicker";
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -47,412 +30,93 @@ function resolveStatusColor(
   c: { overdue: string; dueSoon: string; current: string; notStarted: string }
 ): string {
   switch (status) {
-    case "overdue":
-      return c.overdue;
-    case "due_soon":
-      return c.dueSoon;
-    case "current":
-      return c.current;
-    case "not_started":
-      return c.notStarted;
+    case "overdue": return c.overdue;
+    case "due_soon": return c.dueSoon;
+    case "current": return c.current;
+    case "not_started": return c.notStarted;
   }
 }
 
-interface EnrichedEquipment extends Equipment {
+interface EnrichedArea extends Area {
   worstStatus: TaskStatus;
-  counts: Record<TaskStatus, number>;
-  taskCount: number;
+  overdueCount: number;
+  thingCount: number;
 }
 
-export default function MainHomeScreen() {
+export default function HomeScreen() {
   const { colors } = useTheme();
-  const {
-    equipment,
-    tasks,
-    groups,
-    addGroup,
-    updateGroup,
-    deleteGroup,
-    reorderEquipment,
-    moveEquipmentToGroup,
-  } = useData();
+  const { areas, things, tasks, addArea, reorderAreas } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const [showAreaModal, setShowAreaModal] = useState(false);
+  const [areaName, setAreaName] = useState("");
+  const [areaEmoji, setAreaEmoji] = useState("📁");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isReordering, setIsReordering] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [showGroupModal, setShowGroupModal] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<EquipmentGroup | null>(null);
-  const [groupName, setGroupName] = useState("");
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [assigningEquipment, setAssigningEquipment] = useState<string | null>(null);
-  const [groupEmoji, setGroupEmoji] = useState("📁");
-  const [showGroupEmojiPicker, setShowGroupEmojiPicker] = useState(false);
 
-  const handleGroupEmojiClose = useCallback(() => {
-    setShowGroupEmojiPicker(false);
-    setShowGroupModal(true);
-  }, []);
-
-  const handleGroupEmojiSelect = useCallback((emoji: string) => {
-    setGroupEmoji(emoji);
-    setShowGroupEmojiPicker(false);
-    setShowGroupModal(true);
-  }, []);
-
-  const enriched = useMemo(() => {
-    return equipment.map((eq) => {
-      const et = tasks.filter((t) => t.equipmentId === eq.id);
-      const st = et.map(getTaskStatus);
-      const ws = getWorstStatus(st);
-      const cn: Record<TaskStatus, number> = {
-        overdue: 0,
-        due_soon: 0,
-        current: 0,
-        not_started: 0,
-      };
-      st.forEach((s) => cn[s]++);
-      return { ...eq, worstStatus: ws, counts: cn, taskCount: et.length } as EnrichedEquipment;
-    });
-  }, [equipment, tasks]);
-
-  const sortedGroups = useMemo(
-    () => [...groups].sort((a, b) => a.sortOrder - b.sortOrder),
-    [groups]
-  );
-
-  const sortedEquipment = useMemo(
-    () => [...enriched].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
-    [enriched]
-  );
-
-  const ungroupedEquipment = useMemo(
-    () => sortedEquipment.filter((e) => !e.groupId),
-    [sortedEquipment]
-  );
-
-  const equipmentByGroup = useMemo(() => {
-    const map = new Map<string, EnrichedEquipment[]>();
-    sortedGroups.forEach((g) => {
-      map.set(
-        g.id,
-        sortedEquipment.filter((e) => e.groupId === g.id)
-      );
-    });
-    return map;
-  }, [sortedGroups, sortedEquipment]);
-
-  const toggleGroupCollapse = useCallback((groupId: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
-  }, []);
-
-  const onAdd = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push("/equipment/add");
-  }, [router]);
-
-  const toggleReorder = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsReordering((prev) => !prev);
-  }, []);
-
-  const moveEquipment = useCallback(
-    (index: number, direction: "up" | "down", list: EnrichedEquipment[], groupId: string | null) => {
-      const newIndex = direction === "up" ? index - 1 : index + 1;
-      if (newIndex < 0 || newIndex >= list.length) return;
-
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-      const swapped = [...list];
-      [swapped[index], swapped[newIndex]] = [swapped[newIndex], swapped[index]];
-
-      const newSortOrders = new Map<string, number>();
-      swapped.forEach((item, i) => newSortOrders.set(item.id, i));
-
-      const updated = equipment.map((eq) => {
-        const newOrder = newSortOrders.get(eq.id);
-        if (newOrder !== undefined) {
-          return { ...eq, sortOrder: newOrder };
-        }
-        return eq;
+  const enriched = useMemo<EnrichedArea[]>(() => {
+    return [...areas]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((a) => {
+        const areaThings = things.filter((t) => t.areaId === a.id);
+        const thingIds = new Set(areaThings.map((t) => t.id));
+        const areaTasks = tasks.filter((t) => thingIds.has(t.thingId));
+        const statuses = areaTasks.map(getTaskStatus);
+        const worst = getWorstStatus(statuses);
+        const overdueCount = statuses.filter((s) => s === "overdue").length;
+        return { ...a, worstStatus: worst, overdueCount, thingCount: areaThings.length };
       });
+  }, [areas, things, tasks]);
 
-      reorderEquipment(updated);
-    },
-    [equipment, reorderEquipment]
-  );
-
-  const openCreateGroup = useCallback(() => {
-    setEditingGroup(null);
-    setGroupName("");
-    setGroupEmoji("📁");
-    setShowGroupModal(true);
+  const openCreateArea = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setAreaName("");
+    setAreaEmoji("📁");
+    setShowAreaModal(true);
   }, []);
 
-  const openEditGroup = useCallback((group: EquipmentGroup) => {
-    setShowGroupEmojiPicker(false);
-    setEditingGroup(group);
-    setGroupName(group.name);
-    setGroupEmoji(group.emoji ?? "📁");
-    setShowGroupModal(true);
-  }, []);
-
-  const closeGroupModal = useCallback(() => {
-    setShowGroupModal(false);
-    setShowGroupEmojiPicker(false);
-    setGroupName("");
-    setGroupEmoji("📁");
-    setEditingGroup(null);
-  }, []);
-
-  const saveGroup = useCallback(() => {
-    if (!groupName.trim()) return;
-    const trimmedName = groupName.trim();
-    const emoji = groupEmoji;
-    const editing = editingGroup;
-    
-    if (editing) {
-      updateGroup(editing.id, { name: trimmedName, emoji });
-    } else {
-      addGroup(trimmedName, emoji);
-    }
+  const saveArea = useCallback(() => {
+    if (!areaName.trim()) return;
+    addArea(areaName.trim(), areaEmoji);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    closeGroupModal();
-  }, [groupName, groupEmoji, editingGroup, addGroup, updateGroup, closeGroupModal]);
+    setShowAreaModal(false);
+  }, [areaName, areaEmoji, addArea]);
 
-  const confirmDeleteGroup = useCallback(
-    (group: EquipmentGroup) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      Alert.alert(
-        `Delete "${group.name}"?`,
-        "Equipment in this group will become ungrouped.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => deleteGroup(group.id),
-          },
-        ]
-      );
-    },
-    [deleteGroup]
-  );
-
-  const openAssignModal = useCallback((equipmentId: string) => {
-    setAssigningEquipment(equipmentId);
-    setShowAssignModal(true);
-  }, []);
-
-  const assignToGroup = useCallback(
-    (groupId: string | null) => {
-      if (assigningEquipment) {
-        moveEquipmentToGroup(assigningEquipment, groupId);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-      setShowAssignModal(false);
-      setAssigningEquipment(null);
-    },
-    [assigningEquipment, moveEquipmentToGroup]
-  );
-
-  const renderEquipmentCard = (eq: EnrichedEquipment, index: number, list: EnrichedEquipment[], groupId: string | null) => {
-    const bc = resolveStatusColor(eq.worstStatus, colors);
-    return (
-      <View key={eq.id} style={styles.cardWrapper}>
-        {isReordering && (
-          <View style={styles.reorderControls}>
-            <TouchableOpacity
-              onPress={() => moveEquipment(index, "up", list, groupId)}
-              style={[styles.reorderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-              disabled={index === 0}
-              activeOpacity={0.6}
-            >
-              <ArrowUp size={16} color={index === 0 ? colors.border : colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => moveEquipment(index, "down", list, groupId)}
-              style={[styles.reorderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-              disabled={index === list.length - 1}
-              activeOpacity={0.6}
-            >
-              <ArrowDown size={16} color={index === list.length - 1 ? colors.border : colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => openAssignModal(eq.id)}
-              style={[styles.reorderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-              activeOpacity={0.6}
-            >
-              <FolderOpen size={16} color={colors.accent} />
-            </TouchableOpacity>
-          </View>
-        )}
-        <TouchableOpacity
-          testID={`eq-${eq.id}`}
-          style={[
-            styles.card,
-            { backgroundColor: colors.card, borderColor: colors.border },
-            isReordering && styles.cardReordering,
-          ]}
-          onPress={() => {
-            if (isReordering) return;
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push(`/equipment/${eq.id}`);
-          }}
-          activeOpacity={isReordering ? 1 : 0.7}
-        >
-          <View style={styles.row}>
-            {isReordering && (
-              <View style={styles.gripArea}>
-                <GripVertical size={18} color={colors.textSecondary} />
-              </View>
-            )}
-            <View style={styles.iconBox}>
-              <Text style={styles.emoji}>{eq.emoji}</Text>
-            </View>
-            <View style={styles.info}>
-              <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
-                {eq.name}
-              </Text>
-              <Text style={[styles.taskNum, { color: colors.textSecondary }]}>
-                {eq.taskCount} {eq.taskCount === 1 ? "task" : "tasks"}
-              </Text>
-              {eq.taskCount > 0 && (
-                <View style={styles.statusRow}>
-                  {eq.counts.overdue > 0 && (
-                    <Text style={[styles.st, { color: colors.overdue }]}>
-                      {eq.counts.overdue} overdue
-                    </Text>
-                  )}
-                  {eq.counts.due_soon > 0 && (
-                    <Text style={[styles.st, { color: colors.dueSoon }]}>
-                      {eq.counts.overdue > 0 ? " · " : ""}
-                      {eq.counts.due_soon} due soon
-                    </Text>
-                  )}
-                  {eq.counts.current > 0 && (
-                    <Text style={[styles.st, { color: colors.current }]}>
-                      {eq.counts.overdue > 0 || eq.counts.due_soon > 0 ? " · " : ""}
-                      {eq.counts.current} current
-                    </Text>
-                  )}
-                </View>
-              )}
-            </View>
-            {!isReordering && (
-              <View style={[styles.pill, { backgroundColor: bc + "14" }]}>
-                <View style={[styles.dot, { backgroundColor: bc }]} />
-                <Text style={[styles.pillT, { color: bc }]}>
-                  {STATUS_LABELS[eq.worstStatus]}
-                </Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderGroupSection = (group: EquipmentGroup) => {
-    const groupEquipment = equipmentByGroup.get(group.id) ?? [];
-    const isCollapsed = collapsedGroups.has(group.id);
-    const groupOverallStatus = getWorstStatus(groupEquipment.map((e) => e.worstStatus));
-    const groupStatusColor = resolveStatusColor(groupOverallStatus, colors);
-
-    return (
-      <View key={group.id} style={styles.groupSection}>
-        <TouchableOpacity
-          style={[styles.groupHeader, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => toggleGroupCollapse(group.id)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.groupHeaderLeft}>
-            {isCollapsed ? (
-              <ChevronRight size={20} color={colors.textSecondary} />
-            ) : (
-              <ChevronDown size={20} color={colors.textSecondary} />
-            )}
-            <Text style={styles.groupEmoji}>{group.emoji ?? "📁"}</Text>
-            <View style={[styles.groupDot, { backgroundColor: groupStatusColor }]} />
-            <Text style={[styles.groupName, { color: colors.text }]}>{group.name}</Text>
-            <View style={[styles.groupCount, { backgroundColor: colors.border + "80" }]}>
-              <Text style={[styles.groupCountText, { color: colors.textSecondary }]}>
-                {groupEquipment.length}
-              </Text>
-            </View>
-          </View>
-          {isReordering && (
-            <View style={styles.groupActions}>
-              <TouchableOpacity
-                onPress={() => openEditGroup(group)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Pencil size={16} color={colors.textSecondary} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => confirmDeleteGroup(group)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Trash2 size={16} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
-          )}
-        </TouchableOpacity>
-        {!isCollapsed && (
-          <View style={styles.groupContent}>
-            {groupEquipment.length === 0 ? (
-              <Text style={[styles.groupEmpty, { color: colors.textSecondary }]}>
-                No equipment in this group
-              </Text>
-            ) : (
-              groupEquipment.map((eq, i) => renderEquipmentCard(eq, i, groupEquipment, group.id))
-            )}
-          </View>
-        )}
-      </View>
-    );
-  };
+  const moveArea = useCallback((index: number, direction: "up" | "down") => {
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= enriched.length) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const swapped = [...enriched];
+    [swapped[index], swapped[newIndex]] = [swapped[newIndex], swapped[index]];
+    reorderAreas(swapped);
+  }, [enriched, reorderAreas]);
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
+    <View style={[s.root, { backgroundColor: colors.background }]}>
+      <View style={[s.topBar, { paddingTop: insets.top + 16 }]}>
         <View>
-          <Text style={[styles.title, { color: colors.text }]}>Buttoned Up</Text>
-          {equipment.length > 0 && (
-            <Text style={[styles.meta, { color: colors.textSecondary }]}>
-              {equipment.length} {equipment.length === 1 ? "item" : "items"} tracked
+          <Text style={[s.title, { color: colors.text }]}>Buttoned Up</Text>
+          {enriched.length > 0 && (
+            <Text style={[s.meta, { color: colors.textSecondary }]}>
+              {enriched.length} {enriched.length === 1 ? "Area" : "Areas"}
             </Text>
           )}
         </View>
-        <View style={styles.topActions}>
-          {equipment.length > 0 && (
+        <View style={s.topActions}>
+          {enriched.length > 1 && (
             <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                {
-                  backgroundColor: isReordering ? colors.accent : colors.card,
-                  borderColor: isReordering ? colors.accent : colors.border,
-                },
-              ]}
-              onPress={toggleReorder}
+              style={[s.actionBtn, { backgroundColor: isReordering ? colors.accent : colors.card, borderColor: isReordering ? colors.accent : colors.border }]}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setIsReordering(p => !p); }}
               activeOpacity={0.7}
             >
-              {isReordering ? (
-                <Check size={18} color="#FFF" strokeWidth={2.5} />
-              ) : (
-                <GripVertical size={18} color={colors.textSecondary} />
-              )}
+              {isReordering ? <Check size={18} color="#FFF" strokeWidth={2.5} /> : <GripVertical size={18} color={colors.textSecondary} />}
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            testID="add-equipment-btn"
-            style={[styles.fab, { backgroundColor: colors.accent }]}
-            onPress={onAdd}
+            testID="add-area-btn"
+            style={[s.fab, { backgroundColor: colors.accent }]}
+            onPress={openCreateArea}
             activeOpacity={0.7}
           >
             <Plus size={22} color="#FFFFFF" strokeWidth={2.5} />
@@ -460,164 +124,132 @@ export default function MainHomeScreen() {
         </View>
       </View>
 
-      {equipment.length === 0 && groups.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>🔧</Text>
-          <Text style={[styles.emptyH, { color: colors.text }]}>Nothing to maintain yet.</Text>
-          <Text style={[styles.emptyB, { color: colors.textSecondary }]}>
-            Tap + to add your first piece of equipment.
+      {enriched.length === 0 ? (
+        <View style={s.empty}>
+          <Text style={s.emptyIcon}>🔧</Text>
+          <Text style={[s.emptyH, { color: colors.text }]}>Nothing to maintain yet.</Text>
+          <Text style={[s.emptyB, { color: colors.textSecondary }]}>
+            Tap + to create your first Area — like Home, Garage, or Cabin.
           </Text>
         </View>
       ) : (
         <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollInner, { paddingBottom: insets.bottom + 100 }]}
+          style={s.scroll}
+          contentContainerStyle={[s.scrollInner, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
-          {isReordering && (
-            <TouchableOpacity
-              style={[styles.createGroupBtn, { backgroundColor: colors.card, borderColor: colors.accent + "40" }]}
-              onPress={openCreateGroup}
-              activeOpacity={0.7}
-            >
-              <FolderPlus size={18} color={colors.accent} />
-              <Text style={[styles.createGroupText, { color: colors.accent }]}>Create Group</Text>
-            </TouchableOpacity>
-          )}
-
-          {sortedGroups.map(renderGroupSection)}
-
-          {ungroupedEquipment.length > 0 && sortedGroups.length > 0 && (
-            <View style={styles.ungroupedLabel}>
-              <Text style={[styles.ungroupedText, { color: colors.textSecondary }]}>Ungrouped</Text>
-            </View>
-          )}
-          {ungroupedEquipment.map((eq, i) =>
-            renderEquipmentCard(eq, i, ungroupedEquipment, null)
-          )}
+          {enriched.map((a, i) => {
+            const bc = resolveStatusColor(a.worstStatus, colors);
+            return (
+              <View key={a.id} style={s.rowWrap}>
+                {isReordering && (
+                  <View style={s.reorderControls}>
+                    <TouchableOpacity
+                      onPress={() => moveArea(i, "up")}
+                      style={[s.reorderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                      disabled={i === 0}
+                      activeOpacity={0.6}
+                    >
+                      <ArrowUp size={16} color={i === 0 ? colors.border : colors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => moveArea(i, "down")}
+                      style={[s.reorderBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+                      disabled={i === enriched.length - 1}
+                      activeOpacity={0.6}
+                    >
+                      <ArrowDown size={16} color={i === enriched.length - 1 ? colors.border : colors.text} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <TouchableOpacity
+                  testID={`area-${a.id}`}
+                  style={[s.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => {
+                    if (isReordering) return;
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push(`/area/${a.id}`);
+                  }}
+                  activeOpacity={isReordering ? 1 : 0.7}
+                >
+                  <View style={s.cardTop}>
+                    <Text style={s.cardEmoji}>{a.emoji}</Text>
+                    <View style={[s.statusDot, { backgroundColor: bc }]} />
+                  </View>
+                  <Text style={[s.cardName, { color: colors.text }]} numberOfLines={1}>{a.name}</Text>
+                  <View style={s.cardMeta}>
+                    <Text style={[s.cardMetaText, { color: colors.textSecondary }]}>
+                      {a.thingCount} {a.thingCount === 1 ? "Thing" : "Things"}
+                    </Text>
+                    {a.overdueCount > 0 && (
+                      <>
+                        <Text style={[s.cardMetaDot, { color: colors.textSecondary }]}>·</Text>
+                        <Text style={[s.cardMetaText, { color: colors.overdue, fontWeight: "600" as const }]}>
+                          {a.overdueCount} overdue
+                        </Text>
+                      </>
+                    )}
+                  </View>
+                  <View style={[s.pill, { backgroundColor: bc + "14", alignSelf: "flex-start" as const, marginTop: 8 }]}>
+                    <Text style={[s.pillT, { color: bc }]}>{STATUS_LABELS[a.worstStatus]}</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
         </ScrollView>
       )}
 
-      <Modal
-        visible={showGroupModal}
-        transparent
-        animationType="fade"
-        onRequestClose={closeGroupModal}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={closeGroupModal}
-        >
-          <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                {editingGroup ? "Edit Group" : "New Group"}
-              </Text>
-              <TouchableOpacity onPress={closeGroupModal}>
+      <Modal visible={showAreaModal} transparent animationType="fade" onRequestClose={() => setShowAreaModal(false)}>
+        <TouchableOpacity style={s.modalOverlay} activeOpacity={1} onPress={() => setShowAreaModal(false)}>
+          <TouchableOpacity activeOpacity={1} style={[s.modalContent, { backgroundColor: colors.card }]}>
+            <View style={s.modalHeader}>
+              <Text style={[s.modalTitle, { color: colors.text }]}>New Area</Text>
+              <TouchableOpacity onPress={() => setShowAreaModal(false)}>
                 <X size={22} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <View style={styles.groupEmojiRow}>
+            <View style={s.emojiRow}>
               <TouchableOpacity
-                style={[styles.groupEmojiBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
-                onPress={() => {
-                  setShowGroupModal(false);
-                  setTimeout(() => setShowGroupEmojiPicker(true), 350);
-                }}
+                style={[s.emojiBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                onPress={() => { setShowAreaModal(false); setTimeout(() => setShowEmojiPicker(true), 300); }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.groupEmojiBtnText}>{groupEmoji}</Text>
+                <Text style={s.emojiBtnText}>{areaEmoji}</Text>
               </TouchableOpacity>
               <TextInput
-                style={[
-                  styles.modalInput,
-                  { backgroundColor: colors.background, borderColor: colors.border, color: colors.text, flex: 1 },
-                ]}
-                placeholder="Group name..."
+                style={[s.modalInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text, flex: 1 }]}
+                placeholder="e.g. Home, Garage, Cabin..."
                 placeholderTextColor={colors.textSecondary}
-                value={groupName}
-                onChangeText={setGroupName}
+                value={areaName}
+                onChangeText={setAreaName}
                 autoFocus
               />
             </View>
             <TouchableOpacity
-              style={[
-                styles.modalSave,
-                { backgroundColor: groupName.trim() ? colors.accent : colors.border },
-              ]}
-              onPress={saveGroup}
-              disabled={!groupName.trim()}
+              testID="save-area"
+              style={[s.modalSave, { backgroundColor: areaName.trim() ? colors.accent : colors.border }]}
+              onPress={saveArea}
+              disabled={!areaName.trim()}
               activeOpacity={0.8}
             >
-              <Text style={styles.modalSaveText}>
-                {editingGroup ? "Save" : "Create"}
-              </Text>
+              <Text style={s.modalSaveText}>Create Area</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
       <EmojiPicker
-        visible={showGroupEmojiPicker}
-        onClose={handleGroupEmojiClose}
-        onSelect={handleGroupEmojiSelect}
-        currentEmoji={groupEmoji}
+        visible={showEmojiPicker}
+        onClose={() => { setShowEmojiPicker(false); setShowAreaModal(true); }}
+        onSelect={(em) => { setAreaEmoji(em); setShowEmojiPicker(false); setShowAreaModal(true); }}
+        currentEmoji={areaEmoji}
       />
-
-      <Modal
-        visible={showAssignModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAssignModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAssignModal(false)}
-        >
-          <TouchableOpacity activeOpacity={1} style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Move to Group</Text>
-              <TouchableOpacity onPress={() => setShowAssignModal(false)}>
-                <X size={22} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.assignList}>
-              <TouchableOpacity
-                style={[styles.assignOption, { borderColor: colors.border }]}
-                onPress={() => assignToGroup(null)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.assignOptionText, { color: colors.text }]}>No Group</Text>
-                {assigningEquipment &&
-                  equipment.find((e) => e.id === assigningEquipment)?.groupId === null && (
-                    <Check size={18} color={colors.accent} />
-                  )}
-              </TouchableOpacity>
-              {sortedGroups.map((g) => (
-                <TouchableOpacity
-                  key={g.id}
-                  style={[styles.assignOption, { borderColor: colors.border }]}
-                  onPress={() => assignToGroup(g.id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.assignOptionText, { color: colors.text }]}>{g.name}</Text>
-                  {assigningEquipment &&
-                    equipment.find((e) => e.id === assigningEquipment)?.groupId === g.id && (
-                      <Check size={18} color={colors.accent} />
-                    )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root: { flex: 1 },
   topBar: {
     flexDirection: "row",
@@ -629,156 +261,35 @@ const styles = StyleSheet.create({
   title: { fontSize: 30, fontWeight: "800" as const, letterSpacing: -0.6 },
   meta: { fontSize: 14, marginTop: 2 },
   topActions: { flexDirection: "row", gap: 10, alignItems: "center" },
-  actionBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-  fab: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 0,
-  },
+  actionBtn: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  fab: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
   scroll: { flex: 1 },
-  scrollInner: { paddingHorizontal: 20, gap: 10 },
-  createGroupBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderStyle: "dashed",
-    gap: 8,
-    marginBottom: 6,
-  },
-  createGroupText: { fontSize: 15, fontWeight: "600" as const },
-  groupSection: { marginBottom: 4 },
-  groupHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  groupHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
-  groupEmoji: { fontSize: 20 },
-  groupDot: { width: 8, height: 8, borderRadius: 4 },
-  groupName: { fontSize: 16, fontWeight: "700" as const, flex: 1 },
-  groupCount: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    minWidth: 24,
-    alignItems: "center",
-  },
-  groupCountText: { fontSize: 12, fontWeight: "600" as const },
-  groupActions: { flexDirection: "row", gap: 14, marginLeft: 8 },
-  groupContent: { paddingLeft: 8, paddingTop: 8, gap: 8 },
-  groupEmpty: { fontSize: 13, paddingVertical: 12, paddingLeft: 8 },
-  ungroupedLabel: { marginTop: 8, marginBottom: 4 },
-  ungroupedText: { fontSize: 13, fontWeight: "600" as const, marginLeft: 4 },
-  cardWrapper: { flexDirection: "row", alignItems: "center" },
+  scrollInner: { paddingHorizontal: 20, gap: 12 },
+  rowWrap: { flexDirection: "row", alignItems: "center" },
   reorderControls: { flexDirection: "column", gap: 4, marginRight: 8 },
-  reorderBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-  card: { borderRadius: 14, padding: 16, borderWidth: 1, flex: 1 },
-  cardReordering: { opacity: 0.95 },
-  row: { flexDirection: "row", alignItems: "flex-start" },
-  gripArea: { justifyContent: "center", marginRight: 8, paddingTop: 14 },
-  iconBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 14,
-  },
-  emoji: { fontSize: 34 },
-  info: { flex: 1, marginRight: 8, paddingTop: 2 },
-  name: { fontSize: 17, fontWeight: "600" as const, marginBottom: 2 },
-  taskNum: { fontSize: 13, marginBottom: 4 },
-  statusRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center" },
-  st: { fontSize: 12, fontWeight: "500" as const },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    gap: 5,
-  },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  pillT: { fontSize: 11, fontWeight: "600" as const },
+  reorderBtn: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  card: { flex: 1, borderRadius: 16, padding: 18, borderWidth: 1 },
+  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  cardEmoji: { fontSize: 42 },
+  statusDot: { width: 12, height: 12, borderRadius: 6 },
+  cardName: { fontSize: 22, fontWeight: "700" as const, letterSpacing: -0.3 },
+  cardMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
+  cardMetaText: { fontSize: 14 },
+  cardMetaDot: { fontSize: 14 },
+  pill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  pillT: { fontSize: 11, fontWeight: "700" as const, letterSpacing: 0.3 },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40 },
   emptyIcon: { fontSize: 64, marginBottom: 16 },
   emptyH: { fontSize: 20, fontWeight: "600" as const, marginBottom: 8, textAlign: "center" },
   emptyB: { fontSize: 15, textAlign: "center", lineHeight: 22 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    paddingHorizontal: 30,
-  },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", paddingHorizontal: 30 },
   modalContent: { borderRadius: 16, padding: 24 },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 20,
-  },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
   modalTitle: { fontSize: 18, fontWeight: "700" as const },
-  groupEmojiRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 16,
-  },
-  groupEmojiBtn: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  groupEmojiBtnText: { fontSize: 28 },
-  modalInput: {
-    height: 50,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    fontSize: 16,
-  },
-  modalSave: {
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  emojiRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
+  emojiBtn: { width: 50, height: 50, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  emojiBtnText: { fontSize: 28 },
+  modalInput: { height: 50, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
+  modalSave: { height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   modalSaveText: { color: "#FFF", fontSize: 16, fontWeight: "600" as const },
-  assignList: { maxHeight: 300 },
-  assignOption: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-  },
-  assignOptionText: { fontSize: 16, fontWeight: "500" as const },
 });

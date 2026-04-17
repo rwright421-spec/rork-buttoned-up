@@ -37,9 +37,10 @@ function ButtonedUpNav() {
       <Stack screenOptions={{ headerBackTitle: "Back", animation: "default", contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="equipment/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="equipment/add" options={{ presentation: "modal", headerShown: false }} />
-        <Stack.Screen name="equipment/edit/[id]" options={{ presentation: "modal", headerShown: false }} />
+        <Stack.Screen name="area/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="thing/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="thing/add" options={{ presentation: "modal", headerShown: false }} />
+        <Stack.Screen name="thing/edit/[id]" options={{ presentation: "modal", headerShown: false }} />
         <Stack.Screen name="task/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="task/add" options={{ presentation: "modal", headerShown: false }} />
         <Stack.Screen name="task/add-bulk" options={{ presentation: "modal", headerShown: false }} />

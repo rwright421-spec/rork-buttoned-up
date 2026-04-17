@@ -1,4 +1,4 @@
-export type EquipmentType = 'home' | 'auto' | 'rental' | 'vacation' | 'hottub' | 'generator' | 'lawn' | 'boat' | 'custom';
+export type ThingType = 'home' | 'auto' | 'rental' | 'vacation' | 'hottub' | 'generator' | 'lawn' | 'boat' | 'custom';
 
 export type IntervalUnit = 'days' | 'weeks' | 'months' | 'years';
 
@@ -6,7 +6,7 @@ export type TaskStatus = 'not_started' | 'overdue' | 'due_soon' | 'current';
 
 export type ThemeKey = 'clean' | 'dark' | 'warm' | 'ocean';
 
-export interface EquipmentGroup {
+export interface Area {
   id: string;
   name: string;
   emoji: string;
@@ -14,19 +14,20 @@ export interface EquipmentGroup {
   createdAt: string;
 }
 
-export interface Equipment {
+export interface Thing {
   id: string;
   name: string;
-  type: EquipmentType;
+  type: ThingType;
   emoji: string;
-  groupId: string | null;
+  areaId: string;
   sortOrder: number;
   createdAt: string;
+  decomposeDismissed?: boolean;
 }
 
 export interface Task {
   id: string;
-  equipmentId: string;
+  thingId: string;
   name: string;
   intervalValue: number;
   intervalUnit: IntervalUnit;

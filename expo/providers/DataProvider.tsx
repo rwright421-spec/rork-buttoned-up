@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
-import { Equipment, Task, CompletionLog, AppSettings, EquipmentGroup } from '@/constants/types';
+import { Thing, Task, CompletionLog, AppSettings, Area } from '@/constants/types';
 
 const KEYS = {
   equipment: 'buttonedup_equipment',
@@ -21,11 +21,36 @@ function generateId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2)}-${Math.random().toString(36).substring(2)}`;
 }
 
+interface LegacyEquipment {
+  id: string;
+  name: string;
+  type: Thing['type'];
+  emoji: string;
+  groupId?: string | null;
+  areaId?: string;
+  sortOrder?: number;
+  createdAt: string;
+  decomposeDismissed?: boolean;
+}
+
+interface LegacyTask {
+  id: string;
+  equipmentId?: string;
+  thingId?: string;
+  name: string;
+  intervalValue: number;
+  intervalUnit: Task['intervalUnit'];
+  lastCompletedDate: string | null;
+  notes: string;
+  sortOrder?: number;
+  createdAt: string;
+}
+
 export const [DataProvider, useData] = createContextHook(() => {
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
+  const [things, setThings] = useState<Thing[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [logs, setLogs] = useState<CompletionLog[]>([]);
-  const [groups, setGroups] = useState<EquipmentGroup[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
 
@@ -37,27 +62,63 @@ export const [DataProvider, useData] = createContextHook(() => {
       AsyncStorage.getItem(KEYS.settings),
       AsyncStorage.getItem(KEYS.groups),
     ]).then(([eqStr, taskStr, logStr, settStr, groupStr]) => {
-      if (eqStr) {
-        const parsed = JSON.parse(eqStr) as Equipment[];
-        setEquipment(parsed.map((e, i) => ({
-          ...e,
-          groupId: e.groupId ?? null,
-          sortOrder: e.sortOrder ?? i,
-        })));
+      let loadedAreas: Area[] = [];
+      if (groupStr) {
+        const parsed = JSON.parse(groupStr) as Area[];
+        loadedAreas = parsed.map((g) => ({ ...g, emoji: g.emoji ?? '📁' }));
       }
+
+      if (eqStr) {
+        const parsed = JSON.parse(eqStr) as LegacyEquipment[];
+        const hasUngrouped = parsed.some((e) => !e.areaId && (e.groupId === null || e.groupId === undefined));
+        let generalAreaId: string | null = null;
+        if (hasUngrouped) {
+          const existingGeneral = loadedAreas.find((a) => a.name === 'General');
+          if (existingGeneral) {
+            generalAreaId = existingGeneral.id;
+          } else {
+            const general: Area = {
+              id: generateId(),
+              name: 'General',
+              emoji: '📁',
+              sortOrder: 0,
+              createdAt: new Date().toISOString(),
+            };
+            loadedAreas = [general, ...loadedAreas];
+            generalAreaId = general.id;
+          }
+        }
+        const mapped: Thing[] = parsed.map((e, i) => ({
+          id: e.id,
+          name: e.name,
+          type: e.type,
+          emoji: e.emoji,
+          areaId: e.areaId ?? (e.groupId ?? generalAreaId ?? loadedAreas[0]?.id ?? ''),
+          sortOrder: e.sortOrder ?? i,
+          createdAt: e.createdAt,
+          decomposeDismissed: e.decomposeDismissed,
+        }));
+        setThings(mapped);
+      }
+
+      setAreas(loadedAreas);
+
       if (taskStr) {
-        const parsed = JSON.parse(taskStr) as Task[];
+        const parsed = JSON.parse(taskStr) as LegacyTask[];
         setTasks(parsed.map((t, i) => ({
-          ...t,
+          id: t.id,
+          thingId: t.thingId ?? t.equipmentId ?? '',
+          name: t.name,
+          intervalValue: t.intervalValue,
+          intervalUnit: t.intervalUnit,
+          lastCompletedDate: t.lastCompletedDate,
+          notes: t.notes,
           sortOrder: t.sortOrder ?? i,
+          createdAt: t.createdAt,
         })));
       }
       if (logStr) setLogs(JSON.parse(logStr));
       if (settStr) setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settStr) });
-      if (groupStr) {
-        const parsed = JSON.parse(groupStr) as EquipmentGroup[];
-        setGroups(parsed.map((g) => ({ ...g, emoji: g.emoji ?? '📁' })));
-      }
       setLoaded(true);
       console.log('[DataProvider] Loaded data from storage');
     });
@@ -67,40 +128,39 @@ export const [DataProvider, useData] = createContextHook(() => {
     AsyncStorage.setItem(key, JSON.stringify(data));
   }, []);
 
-  const addEquipment = useCallback((eq: Omit<Equipment, 'id' | 'createdAt' | 'sortOrder' | 'groupId'>): Equipment => {
-    const newEq: Equipment = {
+  const addThing = useCallback((eq: Omit<Thing, 'id' | 'createdAt' | 'sortOrder'>): Thing => {
+    const newThing: Thing = {
       ...eq,
       id: generateId(),
-      groupId: null,
-      sortOrder: equipment.length,
+      sortOrder: things.length,
       createdAt: new Date().toISOString(),
     };
-    setEquipment((prev) => {
-      const updated = [...prev, newEq];
+    setThings((prev) => {
+      const updated = [...prev, newThing];
       persist(KEYS.equipment, updated);
       return updated;
     });
-    console.log('[DataProvider] Added equipment:', newEq.name);
-    return newEq;
-  }, [persist, equipment.length]);
+    console.log('[DataProvider] Added thing:', newThing.name);
+    return newThing;
+  }, [persist, things.length]);
 
-  const updateEquipment = useCallback((id: string, updates: Partial<Equipment>) => {
-    setEquipment((prev) => {
+  const updateThing = useCallback((id: string, updates: Partial<Thing>) => {
+    setThings((prev) => {
       const updated = prev.map((e) => (e.id === id ? { ...e, ...updates } : e));
       persist(KEYS.equipment, updated);
       return updated;
     });
   }, [persist]);
 
-  const deleteEquipment = useCallback((id: string) => {
-    setEquipment((prev) => {
+  const deleteThing = useCallback((id: string) => {
+    setThings((prev) => {
       const updated = prev.filter((e) => e.id !== id);
       persist(KEYS.equipment, updated);
       return updated;
     });
     setTasks((prev) => {
-      const taskIds = prev.filter((t) => t.equipmentId === id).map((t) => t.id);
-      const updated = prev.filter((t) => t.equipmentId !== id);
+      const taskIds = prev.filter((t) => t.thingId === id).map((t) => t.id);
+      const updated = prev.filter((t) => t.thingId !== id);
       persist(KEYS.tasks, updated);
       setLogs((prevLogs) => {
         const updatedLogs = prevLogs.filter((l) => !taskIds.includes(l.taskId));
@@ -109,38 +169,35 @@ export const [DataProvider, useData] = createContextHook(() => {
       });
       return updated;
     });
-    console.log('[DataProvider] Deleted equipment:', id);
+    console.log('[DataProvider] Deleted thing:', id);
   }, [persist]);
 
-  const reorderEquipment = useCallback((reordered: Equipment[]) => {
-    setEquipment(reordered);
+  const reorderThings = useCallback((reordered: Thing[]) => {
+    setThings(reordered);
     persist(KEYS.equipment, reordered);
-    console.log('[DataProvider] Reordered equipment, sortOrders:', reordered.map(e => `${e.name}:${e.sortOrder}`).join(', '));
   }, [persist]);
 
-  const moveEquipmentToGroup = useCallback((equipmentId: string, groupId: string | null) => {
-    setEquipment((prev) => {
-      const updated = prev.map((e) => (e.id === equipmentId ? { ...e, groupId } : e));
+  const moveThingToArea = useCallback((thingId: string, areaId: string) => {
+    setThings((prev) => {
+      const updated = prev.map((e) => (e.id === thingId ? { ...e, areaId } : e));
       persist(KEYS.equipment, updated);
       return updated;
     });
-    console.log('[DataProvider] Moved equipment', equipmentId, 'to group', groupId);
   }, [persist]);
 
   const addTask = useCallback((task: Omit<Task, 'id' | 'createdAt' | 'sortOrder'>): Task => {
-    const existingCount = tasks.filter((t) => t.equipmentId === task.equipmentId).length;
+    const existingCount = tasks.filter((t) => t.thingId === task.thingId).length;
     const newTask: Task = { ...task, id: generateId(), sortOrder: existingCount, createdAt: new Date().toISOString() };
     setTasks((prev) => {
       const updated = [...prev, newTask];
       persist(KEYS.tasks, updated);
       return updated;
     });
-    console.log('[DataProvider] Added task:', newTask.name);
     return newTask;
   }, [persist, tasks]);
 
   const addTasks = useCallback((newTasks: Omit<Task, 'id' | 'createdAt' | 'sortOrder'>[]): Task[] => {
-    const existingCount = tasks.filter((t) => t.equipmentId === newTasks[0]?.equipmentId).length;
+    const existingCount = tasks.filter((t) => t.thingId === newTasks[0]?.thingId).length;
     const created = newTasks.map((t, i) => ({
       ...t,
       id: generateId(),
@@ -152,7 +209,6 @@ export const [DataProvider, useData] = createContextHook(() => {
       persist(KEYS.tasks, updated);
       return updated;
     });
-    console.log('[DataProvider] Added', created.length, 'tasks');
     return created;
   }, [persist, tasks]);
 
@@ -175,17 +231,27 @@ export const [DataProvider, useData] = createContextHook(() => {
       persist(KEYS.logs, updated);
       return updated;
     });
-    console.log('[DataProvider] Deleted task:', id);
   }, [persist]);
 
-  const reorderTasks = useCallback((equipmentId: string, reordered: Task[]) => {
+  const reorderTasks = useCallback((thingId: string, reordered: Task[]) => {
     setTasks((prev) => {
-      const otherTasks = prev.filter((t) => t.equipmentId !== equipmentId);
+      const otherTasks = prev.filter((t) => t.thingId !== thingId);
       const updated = [...otherTasks, ...reordered.map((t, i) => ({ ...t, sortOrder: i }))];
       persist(KEYS.tasks, updated);
       return updated;
     });
-    console.log('[DataProvider] Reordered tasks for equipment:', equipmentId);
+  }, [persist]);
+
+  const moveTaskToThing = useCallback((taskId: string, destinationThingId: string) => {
+    setTasks((prev) => {
+      const destCount = prev.filter((t) => t.thingId === destinationThingId).length;
+      const updated = prev.map((t) =>
+        t.id === taskId ? { ...t, thingId: destinationThingId, sortOrder: destCount } : t
+      );
+      persist(KEYS.tasks, updated);
+      return updated;
+    });
+    console.log('[DataProvider] Moved task', taskId, 'to thing', destinationThingId);
   }, [persist]);
 
   const addCompletionLog = useCallback((taskId: string, completedAt: string, notes: string) => {
@@ -207,7 +273,6 @@ export const [DataProvider, useData] = createContextHook(() => {
             completedAt: task.lastCompletedDate,
             notes: '',
           });
-          console.log('[DataProvider] Created history log for old lastCompletedDate:', task.lastCompletedDate);
         }
       }
 
@@ -224,7 +289,6 @@ export const [DataProvider, useData] = createContextHook(() => {
       persist(KEYS.tasks, updated);
       return updated;
     });
-    console.log('[DataProvider] Added completion for task:', taskId);
   }, [persist, tasks]);
 
   const deleteCompletionLog = useCallback((logId: string) => {
@@ -250,8 +314,8 @@ export const [DataProvider, useData] = createContextHook(() => {
     });
   }, [persist]);
 
-  const getTasksForEquipment = useCallback((equipmentId: string) => {
-    return tasks.filter((t) => t.equipmentId === equipmentId).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  const getTasksForThing = useCallback((thingId: string) => {
+    return tasks.filter((t) => t.thingId === thingId).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   }, [tasks]);
 
   const getLogsForTask = useCallback((taskId: string) => {
@@ -260,50 +324,62 @@ export const [DataProvider, useData] = createContextHook(() => {
       .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
   }, [logs]);
 
-  const addGroup = useCallback((name: string, emoji?: string): EquipmentGroup => {
-    const newGroup: EquipmentGroup = {
+  const addArea = useCallback((name: string, emoji?: string): Area => {
+    const newArea: Area = {
       id: generateId(),
       name,
       emoji: emoji ?? '📁',
-      sortOrder: groups.length,
+      sortOrder: areas.length,
       createdAt: new Date().toISOString(),
     };
-    setGroups((prev) => {
-      const updated = [...prev, newGroup];
+    setAreas((prev) => {
+      const updated = [...prev, newArea];
       persist(KEYS.groups, updated);
       return updated;
     });
-    console.log('[DataProvider] Added group:', name);
-    return newGroup;
-  }, [persist, groups.length]);
+    return newArea;
+  }, [persist, areas.length]);
 
-  const updateGroup = useCallback((id: string, updates: Partial<EquipmentGroup>) => {
-    setGroups((prev) => {
+  const updateArea = useCallback((id: string, updates: Partial<Area>) => {
+    setAreas((prev) => {
       const updated = prev.map((g) => (g.id === id ? { ...g, ...updates } : g));
       persist(KEYS.groups, updated);
       return updated;
     });
   }, [persist]);
 
-  const deleteGroup = useCallback((id: string) => {
-    setGroups((prev) => {
+  const deleteArea = useCallback((id: string) => {
+    setAreas((prev) => {
       const updated = prev.filter((g) => g.id !== id);
       persist(KEYS.groups, updated);
       return updated;
     });
-    setEquipment((prev) => {
-      const updated = prev.map((e) => (e.groupId === id ? { ...e, groupId: null } : e));
-      persist(KEYS.equipment, updated);
-      return updated;
+    setThings((prevThings) => {
+      const thingsToDelete = prevThings.filter((t) => t.areaId === id);
+      const thingIdsToDelete = new Set(thingsToDelete.map((t) => t.id));
+      const updatedThings = prevThings.filter((t) => !thingIdsToDelete.has(t.id));
+      persist(KEYS.equipment, updatedThings);
+      setTasks((prevTasks) => {
+        const taskIdsToDelete = new Set(
+          prevTasks.filter((t) => thingIdsToDelete.has(t.thingId)).map((t) => t.id)
+        );
+        const updatedTasks = prevTasks.filter((t) => !thingIdsToDelete.has(t.thingId));
+        persist(KEYS.tasks, updatedTasks);
+        setLogs((prevLogs) => {
+          const updatedLogs = prevLogs.filter((l) => !taskIdsToDelete.has(l.taskId));
+          persist(KEYS.logs, updatedLogs);
+          return updatedLogs;
+        });
+        return updatedTasks;
+      });
+      return updatedThings;
     });
-    console.log('[DataProvider] Deleted group:', id);
   }, [persist]);
 
-  const reorderGroups = useCallback((reordered: EquipmentGroup[]) => {
+  const reorderAreas = useCallback((reordered: Area[]) => {
     const updated = reordered.map((g, i) => ({ ...g, sortOrder: i }));
-    setGroups(updated);
+    setAreas(updated);
     persist(KEYS.groups, updated);
-    console.log('[DataProvider] Reordered groups');
   }, [persist]);
 
   const updateSettings = useCallback((updates: Partial<AppSettings>) => {
@@ -321,38 +397,39 @@ export const [DataProvider, useData] = createContextHook(() => {
       AsyncStorage.removeItem(KEYS.logs),
       AsyncStorage.removeItem(KEYS.groups),
     ]);
-    setEquipment([]);
+    setThings([]);
     setTasks([]);
     setLogs([]);
-    setGroups([]);
+    setAreas([]);
     console.log('[DataProvider] All data reset');
   }, []);
 
   return {
-    equipment,
+    things,
     tasks,
     logs,
-    groups,
+    areas,
     settings,
     loaded,
-    addEquipment,
-    updateEquipment,
-    deleteEquipment,
-    reorderEquipment,
-    moveEquipmentToGroup,
+    addThing,
+    updateThing,
+    deleteThing,
+    reorderThings,
+    moveThingToArea,
     addTask,
     addTasks,
     updateTask,
     deleteTask,
     reorderTasks,
+    moveTaskToThing,
     addCompletionLog,
     deleteCompletionLog,
-    getTasksForEquipment,
+    getTasksForThing,
     getLogsForTask,
-    addGroup,
-    updateGroup,
-    deleteGroup,
-    reorderGroups,
+    addArea,
+    updateArea,
+    deleteArea,
+    reorderAreas,
     updateSettings,
     resetAllData,
   };
