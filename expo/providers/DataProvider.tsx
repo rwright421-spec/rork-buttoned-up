@@ -324,13 +324,14 @@ export const [DataProvider, useData] = createContextHook(() => {
       .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
   }, [logs]);
 
-  const addArea = useCallback((name: string, emoji?: string): Area => {
+  const addArea = useCallback((name: string, emoji?: string, templateKey?: string): Area => {
     const newArea: Area = {
       id: generateId(),
       name,
       emoji: emoji ?? '📁',
       sortOrder: areas.length,
       createdAt: new Date().toISOString(),
+      templateKey,
     };
     setAreas((prev) => {
       const updated = [...prev, newArea];

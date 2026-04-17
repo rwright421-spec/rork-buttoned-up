@@ -12,6 +12,7 @@ export interface Area {
   emoji: string;
   sortOrder: number;
   createdAt: string;
+  templateKey?: string;
 }
 
 export interface Thing {

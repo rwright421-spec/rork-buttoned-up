@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -16,7 +15,7 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
 import { getTaskStatus, getWorstStatus } from "@/utils/dates";
 import { TaskStatus, Area } from "@/constants/types";
-import EmojiPicker from "@/components/EmojiPicker";
+import AreaCreationFlow from "@/components/AreaCreationFlow";
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   overdue: "Overdue",
@@ -45,14 +44,11 @@ interface EnrichedArea extends Area {
 
 export default function HomeScreen() {
   const { colors } = useTheme();
-  const { areas, things, tasks, addArea, reorderAreas } = useData();
+  const { areas, things, tasks, reorderAreas } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [showAreaModal, setShowAreaModal] = useState(false);
-  const [areaName, setAreaName] = useState("");
-  const [areaEmoji, setAreaEmoji] = useState("📁");
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isReordering, setIsReordering] = useState(false);
 
   const enriched = useMemo<EnrichedArea[]>(() => {
@@ -71,17 +67,13 @@ export default function HomeScreen() {
 
   const openCreateArea = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setAreaName("");
-    setAreaEmoji("📁");
     setShowAreaModal(true);
   }, []);
 
-  const saveArea = useCallback(() => {
-    if (!areaName.trim()) return;
-    addArea(areaName.trim(), areaEmoji);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const onAreaCreated = useCallback((area: Area) => {
     setShowAreaModal(false);
-  }, [areaName, areaEmoji, addArea]);
+    router.push(`/area/${area.id}`);
+  }, [router]);
 
   const moveArea = useCallback((index: number, direction: "up" | "down") => {
     const newIndex = direction === "up" ? index - 1 : index + 1;
@@ -200,51 +192,17 @@ export default function HomeScreen() {
         </ScrollView>
       )}
 
-      <Modal visible={showAreaModal} transparent animationType="fade" onRequestClose={() => setShowAreaModal(false)}>
-        <TouchableOpacity style={s.modalOverlay} activeOpacity={1} onPress={() => setShowAreaModal(false)}>
-          <TouchableOpacity activeOpacity={1} style={[s.modalContent, { backgroundColor: colors.card }]}>
-            <View style={s.modalHeader}>
-              <Text style={[s.modalTitle, { color: colors.text }]}>New Area</Text>
-              <TouchableOpacity onPress={() => setShowAreaModal(false)}>
-                <X size={22} color={colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            <View style={s.emojiRow}>
-              <TouchableOpacity
-                style={[s.emojiBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
-                onPress={() => { setShowAreaModal(false); setTimeout(() => setShowEmojiPicker(true), 300); }}
-                activeOpacity={0.7}
-              >
-                <Text style={s.emojiBtnText}>{areaEmoji}</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={[s.modalInput, { backgroundColor: colors.background, borderColor: colors.border, color: colors.text, flex: 1 }]}
-                placeholder="e.g. Home, Garage, Cabin..."
-                placeholderTextColor={colors.textSecondary}
-                value={areaName}
-                onChangeText={setAreaName}
-                autoFocus
-              />
-            </View>
-            <TouchableOpacity
-              testID="save-area"
-              style={[s.modalSave, { backgroundColor: areaName.trim() ? colors.accent : colors.border }]}
-              onPress={saveArea}
-              disabled={!areaName.trim()}
-              activeOpacity={0.8}
-            >
-              <Text style={s.modalSaveText}>Create Area</Text>
+      <Modal visible={showAreaModal} animationType="slide" onRequestClose={() => setShowAreaModal(false)} presentationStyle="pageSheet">
+        <View style={[s.sheet, { backgroundColor: colors.background, paddingTop: insets.top + 8 }]}>
+          <View style={s.sheetHeader}>
+            <Text style={[s.sheetTitle, { color: colors.text }]}>New Area</Text>
+            <TouchableOpacity onPress={() => setShowAreaModal(false)} style={s.sheetClose} activeOpacity={0.6}>
+              <X size={22} color={colors.textSecondary} />
             </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </View>
+          <AreaCreationFlow onDone={onAreaCreated} onCancel={() => setShowAreaModal(false)} />
+        </View>
       </Modal>
-
-      <EmojiPicker
-        visible={showEmojiPicker}
-        onClose={() => { setShowEmojiPicker(false); setShowAreaModal(true); }}
-        onSelect={(em) => { setAreaEmoji(em); setShowEmojiPicker(false); setShowAreaModal(true); }}
-        currentEmoji={areaEmoji}
-      />
     </View>
   );
 }
@@ -282,14 +240,8 @@ const s = StyleSheet.create({
   emptyIcon: { fontSize: 64, marginBottom: 16 },
   emptyH: { fontSize: 20, fontWeight: "600" as const, marginBottom: 8, textAlign: "center" },
   emptyB: { fontSize: 15, textAlign: "center", lineHeight: 22 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", paddingHorizontal: 30 },
-  modalContent: { borderRadius: 16, padding: 24 },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-  modalTitle: { fontSize: 18, fontWeight: "700" as const },
-  emojiRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
-  emojiBtn: { width: 50, height: 50, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  emojiBtnText: { fontSize: 28 },
-  modalInput: { height: 50, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 16 },
-  modalSave: { height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  modalSaveText: { color: "#FFF", fontSize: 16, fontWeight: "600" as const },
+  sheet: { flex: 1 },
+  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingBottom: 8 },
+  sheetTitle: { fontSize: 18, fontWeight: "700" as const },
+  sheetClose: { padding: 6 },
 });
