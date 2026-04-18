@@ -1,20 +1,54 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Check, Trash2 } from "lucide-react-native";
+import { Check, Trash2, FileJson, FileSpreadsheet, ChevronRight } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
 import { ThemeKey } from "@/constants/types";
 import { themeLabels, themePreviewColors } from "@/constants/themes";
+import { buildBackupPayload, exportBackupJson, exportTasksCsv, summarizeBackup } from "@/utils/export";
 
 const ALL_THEMES: ThemeKey[] = ["clean", "dark", "warm", "ocean"];
 const REMINDER_DAYS = [1, 3, 7, 14];
 
 export default function AppSettingsScreen() {
   const { colors, themeKey, setTheme } = useTheme();
-  const { settings, updateSettings, resetAllData } = useData();
+  const { settings, updateSettings, resetAllData, areas, things, tasks, logs } = useData();
   const insets = useSafeAreaInsets();
+  const [exporting, setExporting] = React.useState<null | 'json' | 'csv'>(null);
+
+  const handleExportJson = async () => {
+    if (exporting) return;
+    setExporting('json');
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const payload = buildBackupPayload(areas, things, tasks, logs, settings);
+      console.log('[Settings] Exporting JSON backup:', summarizeBackup(payload));
+      await exportBackupJson(payload);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      console.error('[Settings] JSON export failed', e);
+      Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export backup.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (exporting) return;
+    setExporting('csv');
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await exportTasksCsv(areas, things, tasks, logs);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      console.error('[Settings] CSV export failed', e);
+      Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export tasks.');
+    } finally {
+      setExporting(null);
+    }
+  };
   const confirmReset = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert("Start Over", "This will permanently delete all Areas, Things, Tasks, and history. This cannot be undone.", [
@@ -49,7 +83,46 @@ export default function AppSettingsScreen() {
                 </TouchableOpacity>); })}</View></View></>)}
         </View>
         <Text style={[styles.label, { color: colors.textSecondary }]}>DATA</Text>
-        <TouchableOpacity testID="reset-btn" style={[styles.group, styles.dangerRow, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={confirmReset} activeOpacity={0.6}>
+        <Text style={[styles.sub, { color: colors.textSecondary }]}>Backup</Text>
+        <View style={[styles.group, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <TouchableOpacity
+            testID="export-json-btn"
+            style={[styles.backupRow, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}
+            onPress={handleExportJson}
+            activeOpacity={0.6}
+            disabled={exporting !== null}
+          >
+            <View style={[styles.iconBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              <FileJson size={18} color={colors.accent} strokeWidth={2} />
+            </View>
+            <View style={styles.backupText}>
+              <Text style={[styles.backupTitle, { color: colors.text }]}>Export JSON</Text>
+              <Text style={[styles.backupSub, { color: colors.textSecondary }]}>Full backup — everything, round-trippable</Text>
+            </View>
+            {exporting === 'json'
+              ? <ActivityIndicator color={colors.textSecondary} />
+              : <ChevronRight size={18} color={colors.textSecondary} strokeWidth={2} />}
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="export-csv-btn"
+            style={styles.backupRow}
+            onPress={handleExportCsv}
+            activeOpacity={0.6}
+            disabled={exporting !== null}
+          >
+            <View style={[styles.iconBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+              <FileSpreadsheet size={18} color={colors.accent} strokeWidth={2} />
+            </View>
+            <View style={styles.backupText}>
+              <Text style={[styles.backupTitle, { color: colors.text }]}>Export CSV</Text>
+              <Text style={[styles.backupSub, { color: colors.textSecondary }]}>Task roster — human-readable spreadsheet</Text>
+            </View>
+            {exporting === 'csv'
+              ? <ActivityIndicator color={colors.textSecondary} />
+              : <ChevronRight size={18} color={colors.textSecondary} strokeWidth={2} />}
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity testID="reset-btn" style={[styles.group, styles.dangerRow, styles.dangerSpacer, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={confirmReset} activeOpacity={0.6}>
           <Trash2 size={18} color="#EF4444" strokeWidth={2} /><Text style={styles.dangerLabel}>Start Over</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -71,5 +144,12 @@ const styles = StyleSheet.create({
   chips: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1 }, chipText: { fontSize: 14, fontWeight: "500" as const },
   dangerRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 16, gap: 8 },
+  dangerSpacer: { marginTop: 16 },
   dangerLabel: { fontSize: 16, fontWeight: "600" as const, color: "#EF4444" },
+  sub: { fontSize: 11, fontWeight: "600" as const, letterSpacing: 0.6, marginBottom: 8, marginTop: 4, marginLeft: 4, textTransform: "uppercase" },
+  backupRow: { flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 14, gap: 12 },
+  iconBox: { width: 36, height: 36, borderRadius: 9, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  backupText: { flex: 1 },
+  backupTitle: { fontSize: 16, fontWeight: "600" as const, marginBottom: 2 },
+  backupSub: { fontSize: 12 },
 });
