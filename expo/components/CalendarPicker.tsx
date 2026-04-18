@@ -31,16 +31,28 @@ export default function CalendarPicker({ visible, initialDate, minDate, maxDate,
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
 
-  const days = useMemo(() => {
+  const weeks = useMemo(() => {
     const firstDay = new Date(year, month, 1);
     const startWeekday = firstDay.getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const cells: (Date | null)[] = [];
     for (let i = 0; i < startWeekday; i++) cells.push(null);
-    for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+    for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d, 12, 0, 0, 0));
     while (cells.length % 7 !== 0) cells.push(null);
-    return cells;
+    const rows: (Date | null)[][] = [];
+    for (let i = 0; i < cells.length; i += 7) rows.push(cells.slice(i, i + 7));
+    return rows;
   }, [year, month]);
+
+  const todayKey = useMemo(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+  }, []);
+
+  const selectedKey = useMemo(() => {
+    if (!selected) return null;
+    return `${selected.getFullYear()}-${selected.getMonth()}-${selected.getDate()}`;
+  }, [selected]);
 
   const prevMonth = useCallback(() => setViewDate(new Date(year, month - 1, 1)), [year, month]);
   const nextMonth = useCallback(() => setViewDate(new Date(year, month + 1, 1)), [year, month]);
@@ -80,30 +92,35 @@ export default function CalendarPicker({ visible, initialDate, minDate, maxDate,
             ))}
           </View>
           <View style={s.grid}>
-            {days.map((d, i) => {
-              if (!d) return <View key={i} style={s.cell} />;
-              const disabled = isDisabled(d);
-              const isSelected = selected && d.toDateString() === selected.toDateString();
-              const isToday = d.toDateString() === new Date().toDateString();
-              return (
-                <TouchableOpacity
-                  key={i}
-                  style={[
-                    s.cell,
-                    isSelected && { backgroundColor: colors.accent, borderRadius: 10 },
-                    isToday && !isSelected && { borderWidth: 1, borderColor: colors.accent, borderRadius: 10 },
-                  ]}
-                  onPress={() => !disabled && setSelected(d)}
-                  disabled={disabled}
-                  activeOpacity={0.6}
-                >
-                  <Text style={[
-                    s.cellText,
-                    { color: disabled ? colors.border : isSelected ? "#FFF" : colors.text }
-                  ]}>{d.getDate()}</Text>
-                </TouchableOpacity>
-              );
-            })}
+            {weeks.map((row, ri) => (
+              <View key={ri} style={s.weekRow}>
+                {row.map((d, i) => {
+                  if (!d) return <View key={i} style={s.cell} />;
+                  const disabled = isDisabled(d);
+                  const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+                  const isSelected = selectedKey === key;
+                  const isToday = todayKey === key;
+                  return (
+                    <TouchableOpacity
+                      key={i}
+                      style={[
+                        s.cell,
+                        isSelected && { backgroundColor: colors.accent, borderRadius: 10 },
+                        isToday && !isSelected && { borderWidth: 1, borderColor: colors.accent, borderRadius: 10 },
+                      ]}
+                      onPress={() => !disabled && setSelected(d)}
+                      disabled={disabled}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={[
+                        s.cellText,
+                        { color: disabled ? colors.border : isSelected ? "#FFF" : colors.text }
+                      ]}>{d.getDate()}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
           </View>
           <View style={s.actions}>
             <TouchableOpacity style={[s.btn, { borderColor: colors.border, borderWidth: 1 }]} onPress={onClose} activeOpacity={0.7}>
@@ -140,8 +157,8 @@ const s = StyleSheet.create({
   monthLabel: { fontSize: 16, fontWeight: "600" as const },
   weekRow: { flexDirection: "row" },
   weekDay: { flex: 1, textAlign: "center" as const, fontSize: 12, fontWeight: "600" as const, paddingVertical: 6 },
-  grid: { flexDirection: "row", flexWrap: "wrap" },
-  cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
+  grid: {},
+  cell: { flex: 1, aspectRatio: 1, alignItems: "center", justifyContent: "center" },
   cellText: { fontSize: 15, fontWeight: "500" as const },
   actions: { flexDirection: "row", gap: 10, marginTop: 12 },
   btn: { flex: 1, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
