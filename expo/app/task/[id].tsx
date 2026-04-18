@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated as RNAnimated, Image, Platform, ActionSheetIOS } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated as RNAnimated, Image, Platform, ActionSheetIOS, Modal } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ArrowLeft, Pencil, Trash2, CheckCircle, Undo2, ClipboardList, MoveRight, Calendar, Camera, MoreHorizontal } from "lucide-react-native";
+import { ArrowLeft, Pencil, Trash2, CheckCircle, Undo2, ClipboardList, MoveRight, Calendar, Camera, MoreHorizontal, Plus, ImageIcon, X } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
@@ -12,6 +12,8 @@ import CalendarPicker from "@/components/CalendarPicker";
 import CompletionModal from "@/components/CompletionModal";
 import CompletionDetailSheet from "@/components/CompletionDetailSheet";
 import ThingPicker from "@/components/ThingPicker";
+import PhotoThumb from "@/components/PhotoThumb";
+import { pickFromLibrary, takePhoto } from "@/utils/photos";
 
 const SI: Record<TaskStatus, { label: string; color: string }> = {
   overdue: { label: "Overdue", color: "#EF4444" }, due_soon: { label: "Due Soon", color: "#F59E0B" },
@@ -36,6 +38,7 @@ export default function TaskView() {
   const [showDuplicate, setShowDuplicate] = useState(false);
   const [showOverride, setShowOverride] = useState(false);
   const [selectedLog, setSelectedLog] = useState<CompletionLog | null>(null);
+  const [photoViewer, setPhotoViewer] = useState<PhotoRef | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoAnim = useRef(new RNAnimated.Value(0)).current;
   const undoProgress = useRef(new RNAnimated.Value(1)).current;
@@ -130,6 +133,48 @@ export default function TaskView() {
     updateCompletionLog(selectedLog.id, { completedAt: data.date, notes: data.notes, photoRefs: data.photos });
   }, [selectedLog, updateCompletionLog]);
 
+  const refPhotos = useMemo<PhotoRef[]>(() => task?.referencePhotos ?? [], [task]);
+
+  const addRefPhoto = useCallback(async () => {
+    if (!task) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const doCamera = async () => {
+      const p = await takePhoto();
+      if (p) updateTask(task.id, { referencePhotos: [...(task.referencePhotos ?? []), p] });
+    };
+    const doLibrary = async () => {
+      const arr = await pickFromLibrary();
+      if (arr && arr.length > 0) updateTask(task.id, { referencePhotos: [...(task.referencePhotos ?? []), ...arr] });
+    };
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Cancel", "Take Photo", "Choose from Library"], cancelButtonIndex: 0 },
+        (i) => { if (i === 1) doCamera(); if (i === 2) doLibrary(); }
+      );
+    } else if (Platform.OS === "web") {
+      doLibrary();
+    } else {
+      Alert.alert("Add Reference Photo", undefined, [
+        { text: "Take Photo", onPress: doCamera },
+        { text: "Choose from Library", onPress: doLibrary },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  }, [task, updateTask]);
+
+  const removeRefPhoto = useCallback((uri: string) => {
+    if (!task) return;
+    updateTask(task.id, { referencePhotos: (task.referencePhotos ?? []).filter(p => p.uri !== uri) });
+  }, [task, updateTask]);
+
+  const replaceRefPhoto = useCallback(async (uri: string) => {
+    if (!task) return;
+    const picked = await pickFromLibrary();
+    if (!picked || picked.length === 0) return;
+    const next = (task.referencePhotos ?? []).map(p => p.uri === uri ? picked[0] : p);
+    updateTask(task.id, { referencePhotos: next });
+  }, [task, updateTask]);
+
   const handleDeleteLog = useCallback(() => {
     if (!selectedLog) return;
     deleteCompletionLog(selectedLog.id);
@@ -166,6 +211,43 @@ export default function TaskView() {
             <Text style={[st.overrideText, { color: colors.textSecondary }]}>Override next due date</Text>
           </TouchableOpacity>
           {task.notes ? <Text style={[st.nt, { color: colors.textSecondary }]}>{task.notes}</Text> : null}
+        </View>
+        <View style={[st.refSection, { borderColor: colors.border }]}>
+          <View style={st.refHeader}>
+            <Text style={[st.refTitle, { color: colors.text }]}>Reference Photos</Text>
+            <TouchableOpacity style={[st.refAddBtn, { backgroundColor: colors.accent }]} onPress={addRefPhoto} activeOpacity={0.8} testID="add-task-ref-photo">
+              <Plus size={14} color="#FFF" strokeWidth={2.5} />
+              <Text style={st.refAddBtnT}>Add</Text>
+            </TouchableOpacity>
+          </View>
+          {refPhotos.length === 0 ? (
+            <TouchableOpacity
+              style={[st.refEmpty, { borderColor: colors.border }]}
+              onPress={addRefPhoto}
+              activeOpacity={0.7}
+            >
+              <View style={st.refEmptyIcons}>
+                <Camera size={16} color={colors.textSecondary} />
+                <ImageIcon size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={[st.refEmptyT, { color: colors.textSecondary }]}>
+                Attach diagrams, instructions, or part numbers specific to this Task.
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={st.refGrid}>
+              {refPhotos.map(p => (
+                <PhotoThumb
+                  key={p.uri}
+                  photo={p}
+                  size={84}
+                  onPress={() => setPhotoViewer(p)}
+                  onRemove={() => removeRefPhoto(p.uri)}
+                  onReplace={() => replaceRefPhoto(p.uri)}
+                />
+              ))}
+            </View>
+          )}
         </View>
         <Text style={[st.sect, { color: colors.textSecondary }]}>HISTORY</Text>
         {allLogs.length === 0 ? (
@@ -268,6 +350,16 @@ export default function TaskView() {
         onClose={() => setShowDuplicate(false)}
         onSelect={pickDuplicateDest}
       />
+      <Modal visible={!!photoViewer} transparent animationType="fade" onRequestClose={() => setPhotoViewer(null)}>
+        <View style={st.viewerOverlay}>
+          <TouchableOpacity style={st.viewerClose} onPress={() => setPhotoViewer(null)} hitSlop={8}>
+            <X size={28} color="#FFF" />
+          </TouchableOpacity>
+          {photoViewer && (
+            <Image source={{ uri: photoViewer.uri }} style={st.viewerImg} resizeMode="contain" />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -313,4 +405,16 @@ const st = StyleSheet.create({
   undoText: { fontSize: 14, fontWeight: "600" as const },
   undoBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   undoBtnText: { fontSize: 14, fontWeight: "700" as const },
+  refSection: { borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 16, gap: 10 },
+  refHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  refTitle: { fontSize: 15, fontWeight: "700" as const, letterSpacing: -0.2 },
+  refAddBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  refAddBtnT: { color: "#FFF", fontSize: 12, fontWeight: "700" as const },
+  refEmpty: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderStyle: "dashed" as const },
+  refEmptyIcons: { flexDirection: "row", gap: 4 },
+  refEmptyT: { flex: 1, fontSize: 12, lineHeight: 17 },
+  refGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  viewerOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)", alignItems: "center", justifyContent: "center" },
+  viewerClose: { position: "absolute" as const, top: 60, right: 24, zIndex: 2, width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center" },
+  viewerImg: { width: "100%" as const, height: "100%" as const },
 });

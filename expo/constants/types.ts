@@ -68,6 +68,7 @@ export interface Task {
   sortOrder: number;
   createdAt: string;
   lastCompletedDate?: string | null;
+  referencePhotos: PhotoRef[];
 }
 
 export interface CompletionLog {

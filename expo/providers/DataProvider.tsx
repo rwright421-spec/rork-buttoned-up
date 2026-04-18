@@ -48,6 +48,7 @@ interface LegacyTask {
   createdAt: string;
   schedule?: Schedule;
   dueDates?: string[];
+  referencePhotos?: PhotoRef[];
 }
 
 export const [DataProvider, useData] = createContextHook(() => {
@@ -142,6 +143,7 @@ export const [DataProvider, useData] = createContextHook(() => {
             sortOrder: t.sortOrder ?? i,
             createdAt: t.createdAt,
             lastCompletedDate,
+            referencePhotos: t.referencePhotos ?? [],
           } as Task;
         }));
       }
@@ -217,12 +219,12 @@ export const [DataProvider, useData] = createContextHook(() => {
     });
   }, [persist]);
 
-  const addTask = useCallback((task: Omit<Task, 'id' | 'createdAt' | 'sortOrder' | 'dueDates'> & { dueDates?: string[] }): Task => {
+  const addTask = useCallback((task: Omit<Task, 'id' | 'createdAt' | 'sortOrder' | 'dueDates' | 'referencePhotos'> & { dueDates?: string[]; referencePhotos?: PhotoRef[] }): Task => {
     const existingCount = tasks.filter((t) => t.thingId === task.thingId).length;
     const dueDates = task.dueDates && task.dueDates.length > 0
       ? task.dueDates
       : computeAllUpcomingDue(task.schedule, task.lastCompletedDate ?? null, 1).map(d => d.toISOString());
-    const newTask: Task = { ...task, dueDates, id: generateId(), sortOrder: existingCount, createdAt: new Date().toISOString() };
+    const newTask: Task = { ...task, dueDates, referencePhotos: task.referencePhotos ?? [], id: generateId(), sortOrder: existingCount, createdAt: new Date().toISOString() };
     setTasks((prev) => {
       const updated = [...prev, newTask];
       persist(KEYS.tasks, updated);
@@ -231,7 +233,7 @@ export const [DataProvider, useData] = createContextHook(() => {
     return newTask;
   }, [persist, tasks]);
 
-  const addTasks = useCallback((newTasks: (Omit<Task, 'id' | 'createdAt' | 'sortOrder' | 'dueDates'> & { dueDates?: string[] })[]): Task[] => {
+  const addTasks = useCallback((newTasks: (Omit<Task, 'id' | 'createdAt' | 'sortOrder' | 'dueDates' | 'referencePhotos'> & { dueDates?: string[]; referencePhotos?: PhotoRef[] })[]): Task[] => {
     const existingCount = tasks.filter((t) => t.thingId === newTasks[0]?.thingId).length;
     const created: Task[] = newTasks.map((t, i) => {
       const dueDates = t.dueDates && t.dueDates.length > 0
@@ -240,6 +242,7 @@ export const [DataProvider, useData] = createContextHook(() => {
       return {
         ...t,
         dueDates,
+        referencePhotos: t.referencePhotos ?? [],
         id: generateId(),
         sortOrder: existingCount + i,
         createdAt: new Date().toISOString(),
@@ -309,6 +312,7 @@ export const [DataProvider, useData] = createContextHook(() => {
       sortOrder: destCount,
       createdAt: new Date().toISOString(),
       lastCompletedDate: null,
+      referencePhotos: (source.referencePhotos ?? []).map((p) => ({ ...p })),
     };
     setTasks((prev) => {
       const updated = [...prev, newTask];
@@ -339,6 +343,7 @@ export const [DataProvider, useData] = createContextHook(() => {
         sortOrder: sortCounter++,
         createdAt: new Date().toISOString(),
         lastCompletedDate: null,
+        referencePhotos: (src.referencePhotos ?? []).map((p) => ({ ...p })),
       });
     });
     if (toCreate.length > 0) {
