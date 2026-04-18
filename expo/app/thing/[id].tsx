@@ -12,13 +12,14 @@ import { matchDecomposeTemplate } from "@/constants/templates";
 import { pickFromLibrary, takePhoto } from "@/utils/photos";
 import PhotoThumb from "@/components/PhotoThumb";
 import ThingPicker from "@/components/ThingPicker";
+import SwipeableCard from "@/components/SwipeableCard";
 
 const SC: Record<TaskStatus, string> = { overdue: "#EF4444", due_soon: "#F59E0B", current: "#22C55E", not_started: "#9CA3AF" };
 
 export default function ThingView() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { things, tasks, logs, deleteThing, reorderTasks, addThing, moveTaskToThing, updateThing, duplicateAllTasksToThing } = useData();
+  const { things, tasks, logs, deleteThing, reorderTasks, addThing, moveTaskToThing, updateThing, duplicateAllTasksToThing, deleteTask } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [isReordering, setIsReordering] = useState(false);
@@ -305,8 +306,9 @@ export default function ThingView() {
               </View>
             )}
           </View>
-          {eqTasks.map((t, index) => (
-            <View key={t.id} style={st.taskRow}>
+          {eqTasks.map((t, index) => {
+            const row = (
+              <View key={t.id} style={st.taskRow}>
               {isReordering && (
                 <View style={st.taskReorderControls}>
                   <TouchableOpacity
@@ -352,7 +354,20 @@ export default function ThingView() {
                 </View>
               </TouchableOpacity>
             </View>
-          ))}
+            );
+            if (isReordering) return row;
+            return (
+              <SwipeableCard
+                key={t.id}
+                onDelete={() => deleteTask(t.id)}
+                confirmTitle={`Delete "${t.name}"?`}
+                confirmMessage="Completion history for this Task will also be deleted."
+                testID={`swipe-task-${t.id}`}
+              >
+                {row}
+              </SwipeableCard>
+            );
+          })}
         </ScrollView>
       )}
 

@@ -16,6 +16,7 @@ import { useData } from "@/providers/DataProvider";
 import { getTaskStatus, getWorstStatus } from "@/utils/dates";
 import { TaskStatus, Area } from "@/constants/types";
 import AreaCreationFlow from "@/components/AreaCreationFlow";
+import SwipeableCard from "@/components/SwipeableCard";
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   overdue: "Overdue",
@@ -44,7 +45,7 @@ interface EnrichedArea extends Area {
 
 export default function HomeScreen() {
   const { colors } = useTheme();
-  const { areas, things, tasks, reorderAreas } = useData();
+  const { areas, things, tasks, reorderAreas, deleteArea } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -132,7 +133,7 @@ export default function HomeScreen() {
         >
           {enriched.map((a, i) => {
             const bc = resolveStatusColor(a.worstStatus, colors);
-            return (
+            const card = (
               <View key={a.id} style={s.rowWrap}>
                 {isReordering && (
                   <View style={s.reorderControls}>
@@ -187,6 +188,18 @@ export default function HomeScreen() {
                   </View>
                 </TouchableOpacity>
               </View>
+            );
+            if (isReordering) return card;
+            return (
+              <SwipeableCard
+                key={a.id}
+                onDelete={() => deleteArea(a.id)}
+                confirmTitle={`Delete "${a.name}"?`}
+                confirmMessage="All Things and Tasks in this Area will also be deleted."
+                testID={`swipe-area-${a.id}`}
+              >
+                {card}
+              </SwipeableCard>
             );
           })}
         </ScrollView>

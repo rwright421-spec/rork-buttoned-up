@@ -18,6 +18,7 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
 import { getTaskStatus, getDueText, getNextDueFromTask, formatDate } from "@/utils/dates";
 import { Task, TaskStatus } from "@/constants/types";
+import SwipeableCard from "@/components/SwipeableCard";
 
 type BucketKey = "overdue" | "today" | "week" | "month" | "later";
 
@@ -63,7 +64,7 @@ export default function TasksScreen() {
   const { colors } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { tasks, things, areas, addCompletionLog, logs } = useData();
+  const { tasks, things, areas, addCompletionLog, logs, deleteTask } = useData();
 
   const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
   const [search, setSearch] = useState<string>("");
@@ -415,7 +416,7 @@ export default function TasksScreen() {
                       : e.status === "current"
                       ? colors.current
                       : colors.notStarted;
-                  return (
+                  const row = (
                     <View
                       key={e.task.id}
                       style={[s.row, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -457,6 +458,17 @@ export default function TasksScreen() {
                         {getDueText(e.task)}
                       </Text>
                     </View>
+                  );
+                  return (
+                    <SwipeableCard
+                      key={e.task.id}
+                      onDelete={() => deleteTask(e.task.id)}
+                      confirmTitle={`Delete "${e.task.name}"?`}
+                      confirmMessage="Completion history for this Task will also be deleted."
+                      testID={`swipe-task-${e.task.id}`}
+                    >
+                      {row}
+                    </SwipeableCard>
                   );
                 })}
               </View>

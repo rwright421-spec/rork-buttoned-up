@@ -9,6 +9,7 @@ import { useData } from "@/providers/DataProvider";
 import { getTaskStatus, getWorstStatus } from "@/utils/dates";
 import { TaskStatus, Thing } from "@/constants/types";
 import EmojiPicker from "@/components/EmojiPicker";
+import SwipeableCard from "@/components/SwipeableCard";
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   overdue: "Overdue",
@@ -38,7 +39,7 @@ interface EnrichedThing extends Thing {
 export default function AreaView() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors } = useTheme();
-  const { areas, things, tasks, reorderThings, updateArea, deleteArea } = useData();
+  const { areas, things, tasks, reorderThings, updateArea, deleteArea, deleteThing } = useData();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [isReordering, setIsReordering] = useState(false);
@@ -156,7 +157,7 @@ export default function AreaView() {
         >
           {enriched.map((th, i) => {
             const bc = resolveStatusColor(th.worstStatus, colors);
-            return (
+            const card = (
               <View key={th.id} style={s.cardWrapper}>
                 {isReordering && (
                   <View style={s.reorderControls}>
@@ -222,6 +223,18 @@ export default function AreaView() {
                   </View>
                 </TouchableOpacity>
               </View>
+            );
+            if (isReordering) return card;
+            return (
+              <SwipeableCard
+                key={th.id}
+                onDelete={() => deleteThing(th.id)}
+                confirmTitle={`Delete "${th.name}"?`}
+                confirmMessage="All Tasks on this Thing will also be deleted."
+                testID={`swipe-thing-${th.id}`}
+              >
+                {card}
+              </SwipeableCard>
             );
           })}
         </ScrollView>
