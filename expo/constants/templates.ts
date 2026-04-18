@@ -648,6 +648,19 @@ export const decomposeTemplates: DecomposeTemplate[] = [
   },
 ];
 
+export const thingTemplatesByEmoji: Record<string, TemplateThing> = (() => {
+  const map: Record<string, TemplateThing> = {};
+  for (const area of templateAreas) {
+    for (const thing of area.things ?? []) {
+      map[thing.emoji] = thing;
+    }
+    if (area.defaultThing) {
+      map[area.defaultThing.emoji] = area.defaultThing;
+    }
+  }
+  return map;
+})();
+
 export function matchDecomposeTemplate(taskName: string): DecomposeTemplate | null {
   const lower = taskName.toLowerCase();
   for (const tpl of decomposeTemplates) {

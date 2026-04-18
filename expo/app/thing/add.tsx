@@ -16,7 +16,7 @@ import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useData } from "@/providers/DataProvider";
 import { ThingType } from "@/constants/types";
-import { thingEmojis, templateAreas, TemplateThing } from "@/constants/templates";
+import { thingEmojis, templateAreas, TemplateThing, thingTemplatesByEmoji } from "@/constants/templates";
 import EmojiPicker from "@/components/EmojiPicker";
 
 function inferTypeFromArea(areaName: string): ThingType {
@@ -70,8 +70,14 @@ export default function NewThingForm() {
   );
   const [namedMode] = useState<boolean>(templateArea?.pattern === "named");
   const [customName, setCustomName] = useState("");
-  const [customEmoji, setCustomEmoji] = useState(thingEmojis[area ? inferTypeFromArea(area.name) : "custom"]);
+  const [customEmoji, setCustomEmoji] = useState<string>("📦");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [applyTemplate, setApplyTemplate] = useState<boolean>(false);
+
+  const matchedTemplate = useMemo<TemplateThing | undefined>(
+    () => thingTemplatesByEmoji[customEmoji],
+    [customEmoji]
+  );
 
   const toggle = useCallback((key: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -142,11 +148,25 @@ export default function NewThingForm() {
 
   const saveCustom = useCallback(() => {
     if (!customName.trim() || !areaId || !area) return;
-    const inferredType = inferTypeFromArea(area.name);
-    addThing({ name: customName.trim(), type: inferredType, emoji: customEmoji, areaId });
+    const created = addThing({ name: customName.trim(), type: "custom", emoji: customEmoji, areaId });
+    if (applyTemplate && matchedTemplate && matchedTemplate.tasks.length > 0) {
+      addTasks(
+        matchedTemplate.tasks.map((k) => ({
+          thingId: created.id,
+          name: k.name,
+          schedule: {
+            kind: 'interval_from_completion' as const,
+            intervalValue: k.intervalValue,
+            intervalUnit: k.intervalUnit,
+          },
+          lastCompletedDate: null,
+          notes: "",
+        }))
+      );
+    }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.back();
-  }, [customName, customEmoji, areaId, area, addThing, router]);
+  }, [customName, customEmoji, areaId, area, addThing, addTasks, applyTemplate, matchedTemplate, router]);
 
   const showCheckboxList =
     templateArea?.pattern === "checkbox" && !customMode && remainingTemplateThings.length > 0;
@@ -308,9 +328,48 @@ export default function NewThingForm() {
               <EmojiPicker
                 visible={showEmojiPicker}
                 onClose={() => setShowEmojiPicker(false)}
-                onSelect={setCustomEmoji}
+                onSelect={(e) => {
+                  setCustomEmoji(e);
+                  setApplyTemplate(false);
+                }}
                 currentEmoji={customEmoji}
               />
+              {matchedTemplate && (
+                <View style={[s.suggest, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[s.suggestT, { color: colors.text }]}>
+                    Use the {matchedTemplate.name} template?
+                  </Text>
+                  <Text style={[s.suggestS, { color: colors.textSecondary }]}>
+                    Includes: {matchedTemplate.tasks.map((t) => t.name).join(", ")}
+                  </Text>
+                  <View style={s.suggestRow}>
+                    <TouchableOpacity
+                      testID="template-skip"
+                      style={[s.suggestBtn, { borderColor: colors.border, backgroundColor: !applyTemplate ? colors.border : "transparent" }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setApplyTemplate(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.suggestBtnT, { color: colors.text }]}>Skip</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      testID="template-apply"
+                      style={[s.suggestBtn, { borderColor: colors.accent, backgroundColor: applyTemplate ? colors.accent : "transparent" }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setApplyTemplate(true);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[s.suggestBtnT, { color: applyTemplate ? "#FFF" : colors.accent }]}>
+                        Add template tasks
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
               <TouchableOpacity
                 testID="save-custom"
                 style={[s.sb, { backgroundColor: customName.trim() ? colors.accent : colors.border }]}
@@ -391,6 +450,12 @@ const s = StyleSheet.create({
     marginBottom: 8,
   },
   previewItem: { fontSize: 14, lineHeight: 22 },
+  suggest: { marginTop: 16, padding: 14, borderRadius: 12, borderWidth: 1 },
+  suggestT: { fontSize: 15, fontWeight: "600" as const, marginBottom: 6 },
+  suggestS: { fontSize: 13, lineHeight: 18, marginBottom: 12 },
+  suggestRow: { flexDirection: "row" as const, gap: 8 },
+  suggestBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, alignItems: "center" as const },
+  suggestBtnT: { fontSize: 14, fontWeight: "600" as const },
   sb: { height: 52, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 24 },
   st: { color: "#FFF", fontSize: 17, fontWeight: "600" as const },
 });
