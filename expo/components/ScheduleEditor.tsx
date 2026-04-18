@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Modal, ScrollView } from "react-native";
 import { Calendar, ChevronDown, Check } from "lucide-react-native";
 import { useTheme } from "@/providers/ThemeProvider";
@@ -31,6 +31,16 @@ export default function ScheduleEditor({ schedule, onChange }: Props) {
   const [showKindMenu, setShowKindMenu] = useState(false);
   const [showAnchorPicker, setShowAnchorPicker] = useState(false);
   const [showOncePicker, setShowOncePicker] = useState(false);
+
+  const [intervalDraft, setIntervalDraft] = useState<string>(String(schedule.intervalValue ?? 1));
+  const [dayDraft, setDayDraft] = useState<string>(String(schedule.day ?? 1));
+  const [monthIntervalDraft, setMonthIntervalDraft] = useState<string>(String(schedule.monthInterval ?? 1));
+  const [weeksIntervalDraft, setWeeksIntervalDraft] = useState<string>(String(schedule.weeksInterval ?? 1));
+
+  useEffect(() => { setIntervalDraft(String(schedule.intervalValue ?? 1)); }, [schedule.intervalValue]);
+  useEffect(() => { setDayDraft(String(schedule.day ?? 1)); }, [schedule.day]);
+  useEffect(() => { setMonthIntervalDraft(String(schedule.monthInterval ?? 1)); }, [schedule.monthInterval]);
+  useEffect(() => { setWeeksIntervalDraft(String(schedule.weeksInterval ?? 1)); }, [schedule.weeksInterval]);
 
   const kindLabel = KIND_OPTIONS.find(k => k.kind === schedule.kind)?.label ?? "";
 
@@ -86,8 +96,15 @@ export default function ScheduleEditor({ schedule, onChange }: Props) {
             <TextInput
               style={[s.intInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
               keyboardType="number-pad"
-              value={String(schedule.intervalValue ?? 1)}
-              onChangeText={(v) => updateField("intervalValue", Math.max(1, parseInt(v, 10) || 1))}
+              value={intervalDraft}
+              onChangeText={setIntervalDraft}
+              onBlur={() => {
+                const parsed = parseInt(intervalDraft, 10);
+                const next = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+                updateField("intervalValue", next);
+                setIntervalDraft(String(next));
+              }}
+              selectTextOnFocus
             />
             <View style={s.unitRow}>
               {UNITS.map(u => {
@@ -152,11 +169,15 @@ export default function ScheduleEditor({ schedule, onChange }: Props) {
           <TextInput
             style={[s.intInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text, width: 80 }]}
             keyboardType="number-pad"
-            value={String(schedule.day ?? 1)}
-            onChangeText={(v) => {
-              const n = parseInt(v, 10) || 1;
-              updateField("day", Math.min(31, Math.max(1, n)));
+            value={dayDraft}
+            onChangeText={setDayDraft}
+            onBlur={() => {
+              const parsed = parseInt(dayDraft, 10);
+              const next = Number.isFinite(parsed) && parsed >= 1 ? Math.min(31, parsed) : 1;
+              updateField("day", next);
+              setDayDraft(String(next));
             }}
+            selectTextOnFocus
           />
         </View>
       )}
@@ -227,8 +248,15 @@ export default function ScheduleEditor({ schedule, onChange }: Props) {
             <TextInput
               style={[s.intInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
               keyboardType="number-pad"
-              value={String(schedule.monthInterval ?? 1)}
-              onChangeText={(v) => updateField("monthInterval", Math.max(1, parseInt(v, 10) || 1))}
+              value={monthIntervalDraft}
+              onChangeText={setMonthIntervalDraft}
+              onBlur={() => {
+                const parsed = parseInt(monthIntervalDraft, 10);
+                const next = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+                updateField("monthInterval", next);
+                setMonthIntervalDraft(String(next));
+              }}
+              selectTextOnFocus
             />
             <Text style={[s.inlineLabel, { color: colors.text }]}>month(s)</Text>
           </View>
@@ -242,8 +270,15 @@ export default function ScheduleEditor({ schedule, onChange }: Props) {
             <TextInput
               style={[s.intInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
               keyboardType="number-pad"
-              value={String(schedule.weeksInterval ?? 1)}
-              onChangeText={(v) => updateField("weeksInterval", Math.max(1, parseInt(v, 10) || 1))}
+              value={weeksIntervalDraft}
+              onChangeText={setWeeksIntervalDraft}
+              onBlur={() => {
+                const parsed = parseInt(weeksIntervalDraft, 10);
+                const next = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+                updateField("weeksInterval", next);
+                setWeeksIntervalDraft(String(next));
+              }}
+              selectTextOnFocus
             />
             <Text style={[s.inlineLabel, { color: colors.text }]}>week(s)</Text>
           </View>
