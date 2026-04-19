@@ -58,8 +58,7 @@
   },
   "overrides": {
     "axios": "1.13.2",
-    "expo-location": "19.0.8",
-    "expo-constants": "18.0.11"
+    "expo-location": "19.0.8"
   },
   "private": true
 }
