@@ -90,10 +90,29 @@ export default function TaskView() {
   const pickDestination = useCallback((destThingId: string) => {
     if (!task) return;
     if (destThingId === task.thingId) { setShowMove(false); return; }
-    moveTaskToThing(task.id, destThingId);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShowMove(false);
-  }, [task, moveTaskToThing]);
+    const destThing = things.find(t => t.id === destThingId);
+    if (!destThing) { setShowMove(false); return; }
+    Alert.alert(
+      `Move '${task.name}'?`,
+      `This Task will move to '${destThing.name}'. Its completion history will move with it.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Move",
+          onPress: () => {
+            try {
+              moveTaskToThing(task.id, destThingId);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowMove(false);
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : "Failed to move task";
+              Alert.alert("Move failed", msg);
+            }
+          },
+        },
+      ]
+    );
+  }, [task, things, moveTaskToThing]);
 
   const pickDuplicateDest = useCallback((destThingId: string) => {
     if (!task) return;
@@ -106,22 +125,33 @@ export default function TaskView() {
     }
   }, [task, duplicateTaskToThing, things]);
 
+  const hasOtherThings = useMemo(() => things.some(t => t.id !== task?.thingId), [things, task]);
+
+  const tryOpenMove = useCallback(() => {
+    if (!hasOtherThings) {
+      Alert.alert("No other Things available", "Create another Thing first to move this Task.");
+      return;
+    }
+    setShowMove(true);
+  }, [hasOtherThings]);
+
   const showActions = useCallback(() => {
     if (!task) return;
-    const options = ["Move to another Thing\u2026", "Duplicate to another Thing\u2026", "Cancel"];
+    const moveLabel = hasOtherThings ? "Move to another Thing\u2026" : "Move to another Thing\u2026 (unavailable)";
+    const options = [moveLabel, "Duplicate to another Thing\u2026", "Cancel"];
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
-        { options, cancelButtonIndex: 2 },
-        (i) => { if (i === 0) setShowMove(true); if (i === 1) setShowDuplicate(true); }
+        { options, cancelButtonIndex: 2, disabledButtonIndices: hasOtherThings ? [] : [0] },
+        (i) => { if (i === 0) tryOpenMove(); if (i === 1) setShowDuplicate(true); }
       );
     } else {
       Alert.alert("Task actions", undefined, [
-        { text: "Move to another Thing\u2026", onPress: () => setShowMove(true) },
+        { text: "Move to another Thing\u2026", onPress: tryOpenMove },
         { text: "Duplicate to another Thing\u2026", onPress: () => setShowDuplicate(true) },
         { text: "Cancel", style: "cancel" },
       ]);
     }
-  }, [task]);
+  }, [task, hasOtherThings, tryOpenMove]);
 
   const updatedSelectedLog = useMemo(() => {
     if (!selectedLog) return null;
@@ -191,7 +221,7 @@ export default function TaskView() {
         <TouchableOpacity onPress={() => router.back()} style={st.back} activeOpacity={0.6}><ArrowLeft size={24} color={colors.text} /></TouchableOpacity>
         <Text style={[st.ht, { color: colors.text }]} numberOfLines={1}>{task.name}</Text>
         <View style={st.ha}>
-          <TouchableOpacity onPress={() => setShowMove(true)} activeOpacity={0.6} testID="move-task"><MoveRight size={20} color={colors.textSecondary} /></TouchableOpacity>
+          <TouchableOpacity onPress={tryOpenMove} activeOpacity={0.6} testID="move-task" disabled={!hasOtherThings} style={{ opacity: hasOtherThings ? 1 : 0.3 }}><MoveRight size={20} color={colors.textSecondary} /></TouchableOpacity>
           <TouchableOpacity onPress={showActions} activeOpacity={0.6} testID="task-actions"><MoreHorizontal size={20} color={colors.textSecondary} /></TouchableOpacity>
           <TouchableOpacity onPress={() => router.push(`/task/edit/${task.id}`)} activeOpacity={0.6}><Pencil size={20} color={colors.textSecondary} /></TouchableOpacity>
           <TouchableOpacity onPress={del} activeOpacity={0.6}><Trash2 size={20} color="#EF4444" /></TouchableOpacity>
@@ -341,6 +371,7 @@ export default function TaskView() {
         visible={showMove}
         title="Move to another Thing"
         currentThingId={task.thingId}
+        excludeThingId={task.thingId}
         onClose={() => setShowMove(false)}
         onSelect={pickDestination}
       />

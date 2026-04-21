@@ -9,11 +9,12 @@ interface Props {
   visible: boolean;
   title: string;
   currentThingId?: string;
+  excludeThingId?: string;
   onClose: () => void;
   onSelect: (thingId: string) => void;
 }
 
-export default function ThingPicker({ visible, title, currentThingId, onClose, onSelect }: Props) {
+export default function ThingPicker({ visible, title, currentThingId, excludeThingId, onClose, onSelect }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { areas, things } = useData();
@@ -21,9 +22,16 @@ export default function ThingPicker({ visible, title, currentThingId, onClose, o
   const thingsByArea = useMemo(() => {
     return [...areas].sort((a, b) => a.sortOrder - b.sortOrder).map(a => ({
       area: a,
-      things: things.filter(t => t.areaId === a.id).sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0)),
+      things: things
+        .filter(t => t.areaId === a.id && t.id !== excludeThingId)
+        .sort((x, y) => (x.sortOrder ?? 0) - (y.sortOrder ?? 0)),
     }));
-  }, [areas, things]);
+  }, [areas, things, excludeThingId]);
+
+  const totalAvailable = useMemo(
+    () => thingsByArea.reduce((sum, g) => sum + g.things.length, 0),
+    [thingsByArea]
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -36,7 +44,10 @@ export default function ThingPicker({ visible, title, currentThingId, onClose, o
             </TouchableOpacity>
           </View>
           <ScrollView style={{ maxHeight: 480 }}>
-            {thingsByArea.map(({ area, things: areaThings }) => (
+            {totalAvailable === 0 && (
+              <Text style={[st.empty, { color: colors.textSecondary, textAlign: "center", paddingVertical: 20 }]}>No other Things available</Text>
+            )}
+            {thingsByArea.filter(g => g.things.length > 0).map(({ area, things: areaThings }) => (
               <View key={area.id} style={{ marginBottom: 10 }}>
                 <Text style={[st.areaLabel, { color: colors.textSecondary }]}>{area.emoji} {area.name}</Text>
                 {areaThings.length === 0 ? (
