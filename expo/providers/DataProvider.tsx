@@ -359,6 +359,7 @@ export const [DataProvider, useData] = createContextHook(() => {
 
   const addCompletionLog = useCallback((taskId: string, completedAt: string, notes: string, photoRefs?: PhotoRef[]): CompletionLog => {
     const newLog: CompletionLog = { id: generateId(), taskId, completedAt, notes, photoRefs: photoRefs ?? [] };
+    let finalTaskLogs: CompletionLog[] = [];
 
     setLogs((prev) => {
       const task = tasks.find((t) => t.id === taskId);
@@ -382,17 +383,21 @@ export const [DataProvider, useData] = createContextHook(() => {
 
       logsToAdd.push(newLog);
       const updated = [...prev, ...logsToAdd];
+      finalTaskLogs = updated.filter((l) => l.taskId === taskId);
       persist(KEYS.logs, updated);
       return updated;
     });
 
     setTasks((prev) => {
+      const mostRecent = finalTaskLogs
+        .slice()
+        .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime())[0]?.completedAt ?? null;
       const updated = prev.map((t) => {
         if (t.id !== taskId) return t;
-        const nextUpcoming = computeAllUpcomingDue(t.schedule, completedAt, 1).map(d => d.toISOString());
+        const nextUpcoming = computeAllUpcomingDue(t.schedule, mostRecent, 1).map(d => d.toISOString());
         const remaining = (t.dueDates ?? []).slice(1);
         const merged = [...nextUpcoming, ...remaining];
-        return { ...t, lastCompletedDate: completedAt, dueDates: merged };
+        return { ...t, lastCompletedDate: mostRecent, dueDates: merged };
       });
       persist(KEYS.tasks, updated);
       return updated;

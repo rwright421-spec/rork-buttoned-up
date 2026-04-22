@@ -29,10 +29,11 @@ export default function TaskView() {
   const insets = useSafeAreaInsets();
   const task = tasks.find(t => t.id === id);
   const allLogs = useMemo(() => id ? getLogsForTask(id) : [], [id, getLogsForTask]);
-  const historyLogs = useMemo(() => allLogs.length > 1 ? allLogs.slice(1) : [], [allLogs]);
+  const historyLogs = useMemo(() => allLogs, [allLogs]);
   const status = task ? getTaskStatus(task) : "not_started";
   const si = SI[status];
   const [modal, setModal] = useState(false);
+  const [addPastModal, setAddPastModal] = useState(false);
   const [undoLogId, setUndoLogId] = useState<string | null>(null);
   const [showMove, setShowMove] = useState(false);
   const [showDuplicate, setShowDuplicate] = useState(false);
@@ -279,15 +280,24 @@ export default function TaskView() {
             </View>
           )}
         </View>
-        <Text style={[st.sect, { color: colors.textSecondary }]}>HISTORY</Text>
+        <View style={st.histHeader}>
+          <Text style={[st.sect, { color: colors.textSecondary, marginBottom: 0 }]}>HISTORY</Text>
+          <TouchableOpacity
+            style={[st.addPastBtn, { borderColor: colors.border }]}
+            onPress={() => setAddPastModal(true)}
+            activeOpacity={0.7}
+            testID="add-past-completion"
+          >
+            <Plus size={12} color={colors.text} strokeWidth={2.5} />
+            <Text style={[st.addPastBtnT, { color: colors.text }]}>Add past completion</Text>
+          </TouchableOpacity>
+        </View>
         {allLogs.length === 0 ? (
           <View style={st.emptyState}>
             <ClipboardList size={32} color={colors.border} />
             <Text style={[st.emptyTitle, { color: colors.text }]}>No completions yet</Text>
             <Text style={[st.emptySub, { color: colors.textSecondary }]}>Tap Mark Complete to start your history.</Text>
           </View>
-        ) : allLogs.length === 1 ? (
-          <Text style={[st.ehOnce, { color: colors.textSecondary }]}>Your history will appear here after your next completion.</Text>
         ) : historyLogs.map((l) => {
           const photoCount = (l.photoRefs ?? []).length;
           const firstPhoto = photoCount > 0 ? l.photoRefs[0] : null;
@@ -345,6 +355,18 @@ export default function TaskView() {
         visible={modal}
         onClose={() => setModal(false)}
         onSave={complete}
+      />
+
+      <CompletionModal
+        visible={addPastModal}
+        title="Add Past Completion"
+        onClose={() => setAddPastModal(false)}
+        onSave={(data) => {
+          if (!id) return;
+          addCompletionLog(id, data.date, data.notes, data.photos);
+          setAddPastModal(false);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
       />
 
       <CompletionDetailSheet
@@ -413,6 +435,9 @@ const st = StyleSheet.create({
   overrideText: { fontSize: 12, fontWeight: "500" as const },
   nt: { fontSize: 14, fontStyle: "italic" as const },
   sect: { fontSize: 12, fontWeight: "600" as const, letterSpacing: 0.8, marginBottom: 10, marginLeft: 2 },
+  histHeader: { flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "space-between" as const, marginBottom: 10, marginLeft: 2 },
+  addPastBtn: { flexDirection: "row" as const, alignItems: "center" as const, gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderStyle: "dashed" as const },
+  addPastBtnT: { fontSize: 12, fontWeight: "600" as const },
   emptyState: { alignItems: "center", paddingVertical: 32, gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: "600" as const },
   emptySub: { fontSize: 13, textAlign: "center" as const },
