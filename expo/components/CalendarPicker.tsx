@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from "react-native";
-import { ChevronLeft, ChevronRight, X } from "lucide-react-native";
+import React, { useState, useCallback, useMemo, useRef } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, Pressable } from "react-native";
+import { ChevronLeft, ChevronRight, X, ChevronDown } from "lucide-react-native";
 import { useTheme } from "@/providers/ThemeProvider";
 
 interface Props {
@@ -20,6 +20,9 @@ export default function CalendarPicker({ visible, initialDate, minDate, maxDate,
   const { colors } = useTheme();
   const [viewDate, setViewDate] = useState<Date>(initialDate ?? new Date());
   const [selected, setSelected] = useState<Date | null>(initialDate ?? null);
+  const [monthPickerOpen, setMonthPickerOpen] = useState<boolean>(false);
+  const [yearPickerOpen, setYearPickerOpen] = useState<boolean>(false);
+  const yearScrollRef = useRef<ScrollView | null>(null);
 
   React.useEffect(() => {
     if (visible) {
@@ -78,11 +81,36 @@ export default function CalendarPicker({ visible, initialDate, minDate, maxDate,
             </TouchableOpacity>
           </View>
           <View style={s.navRow}>
-            <TouchableOpacity onPress={prevMonth} style={s.navBtn} activeOpacity={0.6}>
+            <TouchableOpacity onPress={prevMonth} style={s.navBtn} activeOpacity={0.6} testID="cal-prev-month">
               <ChevronLeft size={22} color={colors.text} />
             </TouchableOpacity>
-            <Text style={[s.monthLabel, { color: colors.text }]}>{MONTHS[month]} {year}</Text>
-            <TouchableOpacity onPress={nextMonth} style={s.navBtn} activeOpacity={0.6}>
+            <View style={s.monthYearRow} pointerEvents="box-none">
+              <TouchableOpacity
+                onPress={() => setMonthPickerOpen(true)}
+                activeOpacity={0.6}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={s.monthYearBtn}
+                accessibilityRole="button"
+                accessibilityLabel={`Month: ${MONTHS[month]}. Tap to change.`}
+                testID="cal-month-btn"
+              >
+                <Text style={[s.monthLabel, { color: colors.text }]}>{MONTHS[month]}</Text>
+                <ChevronDown size={14} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setYearPickerOpen(true)}
+                activeOpacity={0.6}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={s.monthYearBtn}
+                accessibilityRole="button"
+                accessibilityLabel={`Year: ${year}. Tap to change.`}
+                testID="cal-year-btn"
+              >
+                <Text style={[s.monthLabel, { color: colors.text }]}>{year}</Text>
+                <ChevronDown size={14} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={nextMonth} style={s.navBtn} activeOpacity={0.6} testID="cal-next-month">
               <ChevronRight size={22} color={colors.text} />
             </TouchableOpacity>
           </View>
@@ -137,9 +165,78 @@ export default function CalendarPicker({ visible, initialDate, minDate, maxDate,
           </View>
         </View>
       </View>
+      <Modal visible={monthPickerOpen} transparent animationType="fade" onRequestClose={() => setMonthPickerOpen(false)}>
+        <Pressable style={s.overlay} onPress={() => setMonthPickerOpen(false)}>
+          <Pressable style={[s.pickerSheet, { backgroundColor: colors.card }]} onPress={() => {}}>
+            <Text style={[s.title, { color: colors.text, marginBottom: 12 }]}>Select month</Text>
+            <View style={s.monthGrid}>
+              {MONTHS.map((m, i) => {
+                const isCurrent = i === month;
+                return (
+                  <TouchableOpacity
+                    key={m}
+                    style={[
+                      s.monthCell,
+                      isCurrent && { backgroundColor: colors.accent },
+                    ]}
+                    onPress={() => {
+                      setViewDate(new Date(year, i, 1));
+                      setMonthPickerOpen(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.monthCellText, { color: isCurrent ? "#FFF" : colors.text }]}>{m.slice(0, 3)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+      <Modal visible={yearPickerOpen} transparent animationType="fade" onRequestClose={() => setYearPickerOpen(false)}>
+        <Pressable style={s.overlay} onPress={() => setYearPickerOpen(false)}>
+          <Pressable style={[s.pickerSheet, { backgroundColor: colors.card, maxHeight: 380 }]} onPress={() => {}}>
+            <Text style={[s.title, { color: colors.text, marginBottom: 12 }]}>Select year</Text>
+            <ScrollView
+              ref={yearScrollRef}
+              onLayout={() => {
+                const idx = YEARS.findIndex((y) => y === year);
+                if (idx >= 0) {
+                  yearScrollRef.current?.scrollTo({ y: Math.max(0, idx * 44 - 120), animated: false });
+                }
+              }}
+              showsVerticalScrollIndicator={false}
+            >
+              {YEARS.map((y) => {
+                const isCurrent = y === year;
+                return (
+                  <TouchableOpacity
+                    key={y}
+                    style={[s.yearRow, isCurrent && { backgroundColor: colors.accent, borderRadius: 10 }]}
+                    onPress={() => {
+                      setViewDate(new Date(y, month, 1));
+                      setYearPickerOpen(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[s.yearRowText, { color: isCurrent ? "#FFF" : colors.text }]}>{y}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 }
+
+const YEARS: number[] = (() => {
+  const current = new Date().getFullYear();
+  const arr: number[] = [];
+  for (let y = current - 50; y <= current + 20; y++) arr.push(y);
+  return arr;
+})();
 
 function startOfDay(d: Date): Date {
   const r = new Date(d);
@@ -153,8 +250,16 @@ const s = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   title: { fontSize: 17, fontWeight: "700" as const },
   navRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
-  navBtn: { padding: 6 },
+  navBtn: { padding: 6, minWidth: 32, minHeight: 32, alignItems: "center", justifyContent: "center" },
+  monthYearRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  monthYearBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 6, paddingHorizontal: 4, minHeight: 32 },
   monthLabel: { fontSize: 16, fontWeight: "600" as const },
+  pickerSheet: { borderRadius: 20, padding: 20, marginHorizontal: 20, ...Platform.select({ web: { maxWidth: 420, alignSelf: "center", width: "100%" as const }, default: {} }) },
+  monthGrid: { flexDirection: "row", flexWrap: "wrap" },
+  monthCell: { width: "25%", paddingVertical: 12, alignItems: "center", justifyContent: "center", borderRadius: 10 },
+  monthCellText: { fontSize: 14, fontWeight: "600" as const },
+  yearRow: { paddingVertical: 12, alignItems: "center", justifyContent: "center" },
+  yearRowText: { fontSize: 16, fontWeight: "600" as const },
   weekRow: { flexDirection: "row" },
   weekDay: { flex: 1, textAlign: "center" as const, fontSize: 12, fontWeight: "600" as const, paddingVertical: 6 },
   grid: {},
