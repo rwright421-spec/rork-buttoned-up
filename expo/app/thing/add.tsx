@@ -188,15 +188,15 @@ export default function NewThingForm() {
         >
           {area && (
             <Text style={[s.ctx, { color: colors.textSecondary }]}>
-              In {area.emoji} {area.name}
+              Adding to {area.emoji} {area.name}
             </Text>
           )}
 
           {showCheckboxList && (
             <>
-              <Text style={[s.stepT, { color: colors.text }]}>Add more to {area?.name}</Text>
+              <Text style={[s.stepT, { color: colors.text }]}>What are you tracking?</Text>
               <Text style={[s.stepS, { color: colors.textSecondary }]}>
-                Pick from our suggestions, or add a custom Thing.
+                Pick from our suggestions, or add your own.
               </Text>
               {remainingTemplateThings.map((th) => {
                 const checked = checks.find((c) => c.key === th.key)?.selected ?? false;
@@ -256,8 +256,7 @@ export default function NewThingForm() {
 
           {namedMode && !customMode && templateArea?.defaultThing && (
             <>
-              <Text style={[s.stepT, { color: colors.text }]}>Add to {area?.name}</Text>
-              <Text style={[s.stepS, { color: colors.textSecondary }]}>{templateArea.thingPrompt}</Text>
+              <Text style={[s.stepT, { color: colors.text }]}>{templateArea.thingPrompt}</Text>
               <TextInput
                 testID="named-name"
                 style={[s.i, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
@@ -304,7 +303,7 @@ export default function NewThingForm() {
 
           {customMode && (
             <>
-              <Text style={[s.stepT, { color: colors.text }]}>Custom Thing</Text>
+              <Text style={[s.stepT, { color: colors.text }]}>What are you tracking?</Text>
               <Text style={[s.stepS, { color: colors.textSecondary }]}>Name it and pick an emoji.</Text>
               <Text style={[s.l, { color: colors.textSecondary }]}>Name</Text>
               <TextInput
